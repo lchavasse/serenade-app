@@ -2,6 +2,10 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
 import { fal } from "@fal-ai/client";
 import redis from '@/lib/redis';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { JobData } from './create-job';
 
 // Configure runtime for background function
 export const config = {
@@ -18,6 +22,15 @@ if (process.env.FAL_KEY) {
     credentials: process.env.FAL_KEY
   });
 }
+
+// Configure S3 client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'eu-west-2',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -38,22 +51,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await processDancingVideoInBackground(jobId, imageUrl, prompt);
   } catch (error) {
     console.error('Background processing error:', error);
-    
-    // Update Redis with error status
-    await redis.set(
-      `job:${jobId}`, 
-      JSON.stringify({ 
-        status: 'error',
-        type: 'dancing-video',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        updatedAt: new Date().toISOString()
-      }), 
-      { ex: 86400 }
-    );
+    await updateJobWithError(jobId, error instanceof Error ? error.message : 'Unknown error');
   }
 }
 
-export async function processDancingVideoInBackground(jobId: string, imageUrl: string, prompt: string) {
+export async function processDancingVideoInBackground(
+  jobId: string, 
+  imageUrl: string, 
+  prompt: string
+) {
   try {
     console.log(`Starting dancing video generation for job ${jobId}`);
 
@@ -66,16 +72,7 @@ export async function processDancingVideoInBackground(jobId: string, imageUrl: s
     }
 
     // Step 1: Update status to processing
-    await redis.set(
-      `job:${jobId}`, 
-      JSON.stringify({ 
-        status: 'processing',
-        type: 'dancing-video',
-        step: 'enhancing-prompt',
-        updatedAt: new Date().toISOString()
-      }), 
-      { ex: 86400 }
-    );
+    await updateJobStatus(jobId, 'processing');
 
     // Step 2: Enhance the prompt with OpenAI GPT-4o using the profile image
     console.log('Step 1: Enhancing prompt with GPT-4o...');
@@ -119,20 +116,10 @@ Enhanced prompt:`
       throw new Error('Failed to generate enhanced prompt');
     }
 
-    // Step 3: Update status to submitting video job
-    await redis.set(
-      `job:${jobId}`, 
-      JSON.stringify({ 
-        status: 'processing',
-        type: 'dancing-video',
-        step: 'submitting-video-job',
-        enhancedPrompt: enhancedPrompt,
-        updatedAt: new Date().toISOString()
-      }), 
-      { ex: 86400 }
-    );
+    // Update job with enhanced prompt
+    await updateJobWithEnhancedPrompt(jobId, enhancedPrompt);
 
-    // Step 4: Submit job to fal.ai
+    // Step 3: Submit job to fal.ai
     console.log('Step 2: Submitting video generation job to fal.ai...');
     
     const { request_id } = await fal.queue.submit("fal-ai/kling-video/v2.1/standard/image-to-video", {
@@ -147,122 +134,171 @@ Enhanced prompt:`
 
     console.log('Video generation job submitted with request_id:', request_id);
 
-    // Step 5: Update status to polling
-    await redis.set(
-      `job:${jobId}`, 
-      JSON.stringify({ 
-        status: 'processing',
-        type: 'dancing-video',
-        step: 'generating-video',
-        falRequestId: request_id,
-        enhancedPrompt: enhancedPrompt,
-        updatedAt: new Date().toISOString()
-      }), 
-      { ex: 86400 }
-    );
+    // Update job with fal request ID
+    await updateJobWithFalRequestId(jobId, request_id);
 
-    // Step 6: Poll for results every 15 seconds
-    console.log('Step 3: Polling for video generation results...');
+    // Step 4: Poll for completion
+    console.log('Step 3: Polling for video generation completion...');
     
-    let videoReady = false;
+    let videoResult: { data?: { video?: { url: string } } } | undefined = undefined;
     let attempts = 0;
-    const maxAttempts = 240; // 60 minutes max (240 * 15 seconds)
+    const maxAttempts = 120; // 10 minutes with 5-second intervals
     
-    while (!videoReady && attempts < maxAttempts) {
+    while (attempts < maxAttempts) {
       try {
-        attempts++;
-        console.log(`Polling attempt ${attempts}/${maxAttempts} for request_id: ${request_id}`);
+        videoResult = await fal.queue.result("fal-ai/kling-video/v2.1/standard/image-to-video", {
+          requestId: request_id
+        });
         
-        const status = await fal.queue.status("fal-ai/kling-video/v2.1/standard/image-to-video", {
-          requestId: request_id,
-          logs: true
-        }) as { status: string; partial_result?: unknown }; // Proper typing for fal.ai response
-
-        console.log('Status response:', status);
-
-        if (status.status === 'COMPLETED') {
-          // Get the final result
-          const result = await fal.queue.result("fal-ai/kling-video/v2.1/standard/image-to-video", {
-            requestId: request_id
-          });
-
-          console.log('Video generation completed successfully');
-          
-          // Update Redis with final result
-          await redis.set(
-            `job:${jobId}`, 
-            JSON.stringify({ 
-              status: 'completed',
-              type: 'dancing-video',
-              videoUrl: result.data.video?.url,
-              enhancedPrompt: enhancedPrompt,
-              falRequestId: request_id,
-              completedAt: new Date().toISOString()
-            }), 
-            { ex: 86400 }
-          );
-
-          videoReady = true;
-          
-        } else if (status.status === 'IN_PROGRESS' || status.status === 'IN_QUEUE') {
-          // Still in progress, wait 15 seconds before next poll
-          console.log(`Video generation in progress (${status.status}), waiting 15 seconds...`);
-          
-          // Update Redis with current status
-          await redis.set(
-            `job:${jobId}`, 
-            JSON.stringify({ 
-              status: 'processing',
-              type: 'dancing-video',
-              step: 'generating-video',
-              falStatus: status.status,
-              falRequestId: request_id,
-              enhancedPrompt: enhancedPrompt,
-              pollingAttempt: attempts,
-              updatedAt: new Date().toISOString()
-            }), 
-            { ex: 86400 }
-          );
-          
-          await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15 seconds
-        } else {
-          // Handle any other status (like error states)
-          throw new Error(`Video generation failed with status: ${status.status}`);
+        if (videoResult) {
+          console.log('Video generation completed');
+          break;
         }
-        
-      } catch (pollingError) {
-        console.error(`Polling attempt ${attempts} failed:`, pollingError);
-        
-        // If it's a temporary error, continue polling
-        if (attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15 seconds before retry
+      } catch (error: unknown) {
+        if (error instanceof Error && (error.message.includes('Request is still in queue') || error.message.includes('Request is being processed'))) {
+          console.log(`Attempt ${attempts + 1}: Video still generating...`);
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+          attempts++;
+          continue;
         } else {
-          throw pollingError;
+          throw error;
         }
       }
     }
 
-    if (!videoReady) {
-      throw new Error('Video generation timed out after maximum polling attempts');
+    if (!videoResult) {
+      throw new Error('Video generation timed out after 10 minutes');
     }
+
+    if (!videoResult.data?.video?.url) {
+      throw new Error('No video URL in result');
+    }
+
+    console.log('Video generated successfully:', videoResult.data.video.url);
+
+    // Step 5: Download and upload to S3
+    console.log('Step 4: Downloading video and uploading to S3...');
+    
+    const videoResponse = await fetch(videoResult.data.video.url);
+    if (!videoResponse.ok) {
+      throw new Error(`Failed to download video: ${videoResponse.statusText}`);
+    }
+
+    const videoBuffer = await videoResponse.arrayBuffer();
+    console.log('Video downloaded, size:', videoBuffer.byteLength);
+
+    // Upload to S3
+    const s3Key = `videos/${jobId}.mp4`;
+    const putCommand = new PutObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME!,
+      Key: s3Key,
+      Body: Buffer.from(videoBuffer),
+      ContentType: 'video/mp4',
+    });
+
+    await s3Client.send(putCommand);
+    console.log('S3 upload completed');
+
+    // Generate signed URL for sharing
+    console.log('Generating signed URL...');
+    const getCommand = new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME!,
+      Key: s3Key,
+    });
+
+    const signedUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 604800 }); // 7 days
+
+    // Step 6: Update job to completed
+    await updateJobWithVideoUrl(jobId, signedUrl);
 
     console.log(`Dancing video generation completed successfully for job ${jobId}`);
 
   } catch (error) {
-    console.error('Error in dancing video background processing:', error);
-    
-    // Update Redis with error status
-    await redis.set(
-      `job:${jobId}`, 
-      JSON.stringify({ 
-        status: 'error',
-        type: 'dancing-video',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        updatedAt: new Date().toISOString()
-      }), 
-      { ex: 86400 }
-    );
-    
+    console.error('Error in dancing video generation:', error);
     throw error; // Re-throw to be handled by caller
+  }
+}
+
+// Helper functions to update job status
+async function updateJobStatus(jobId: string, status: 'pending' | 'processing' | 'completed' | 'error') {
+  const currentJobData = await redis.get(`job:${jobId}`);
+  if (!currentJobData) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+  
+  const jobData = currentJobData as JobData & { type: 'video' };
+  const updatedJobData: JobData = {
+    ...jobData,
+    status,
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
+}
+
+async function updateJobWithEnhancedPrompt(jobId: string, enhancedPrompt: string) {
+  const currentJobData = await redis.get(`job:${jobId}`);
+  if (!currentJobData) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+  
+  const jobData = currentJobData as JobData & { type: 'video' };
+  const updatedJobData: JobData = {
+    ...jobData,
+    enhancedPrompt,
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
+}
+
+async function updateJobWithFalRequestId(jobId: string, falRequestId: string) {
+  const currentJobData = await redis.get(`job:${jobId}`);
+  if (!currentJobData) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+  
+  const jobData = currentJobData as JobData & { type: 'video' };
+  const updatedJobData: JobData = {
+    ...jobData,
+    falRequestId,
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
+}
+
+async function updateJobWithVideoUrl(jobId: string, videoUrl: string) {
+  const currentJobData = await redis.get(`job:${jobId}`);
+  if (!currentJobData) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+  
+  const jobData = currentJobData as JobData & { type: 'video' };
+  const updatedJobData: JobData = {
+    ...jobData,
+    videoUrl,
+    status: 'completed',
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
+}
+
+async function updateJobWithError(jobId: string, errorMessage: string) {
+  try {
+    const currentJobData = await redis.get(`job:${jobId}`);
+    if (currentJobData) {
+      const jobData = currentJobData as JobData & { type: 'video' };
+      const errorJobData: JobData = {
+        ...jobData,
+        status: 'error',
+        error: errorMessage,
+        updatedAt: new Date().toISOString(),
+      };
+      await redis.set(`job:${jobId}`, JSON.stringify(errorJobData), { ex: 86400 });
+    }
+  } catch (error) {
+    console.error('Error updating job with error:', error);
   }
 } 

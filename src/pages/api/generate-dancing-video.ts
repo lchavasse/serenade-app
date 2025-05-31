@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { v4 as uuidv4 } from 'uuid';
 import redis from '@/lib/redis';
 import { waitUntil } from '@vercel/functions';
 import { fal } from "@fal-ai/client";
+import { JobData } from './create-job';
 
 // Import the background processing function
 import { processDancingVideoInBackground } from './generate-dancing-video.background';
@@ -29,67 +29,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { imageUrl, imageData, prompt } = req.body;
+    const { jobId, images } = req.body;
     
-    if (!imageUrl && !imageData) {
-      return res.status(400).json({ error: 'Either imageUrl or imageData is required' });
+    // Validate required parameters for new discriminated union format
+    if (!jobId || !images || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ error: 'jobId and images array are required' });
     }
 
-    if (!prompt || typeof prompt !== 'string') {
-      return res.status(400).json({ error: 'Prompt is required' });
+    // Get the first image for video generation
+    const firstImage = images[0];
+    if (!firstImage || !firstImage.data || !firstImage.mime_type) {
+      return res.status(400).json({ error: 'Invalid image data' });
     }
 
-    let finalImageUrl = imageUrl;
-
-    // If imageData is provided (base64), upload it to fal.ai storage first
-    if (imageData && !imageUrl) {
-      try {
-        console.log('Uploading image to fal.ai storage...');
-        
-        // Convert base64 to blob
-        const base64Data = imageData.replace(/^data:image\/[a-z]+;base64,/, '');
-        const buffer = Buffer.from(base64Data, 'base64');
-        const blob = new Blob([buffer], { type: 'image/jpeg' });
-        
-        // Upload to fal.ai storage
-        finalImageUrl = await fal.storage.upload(blob);
-        console.log('Image uploaded to fal.ai:', finalImageUrl);
-        
-      } catch (uploadError) {
-        console.error('Failed to upload image to fal.ai:', uploadError);
-        return res.status(500).json({ error: 'Failed to upload image' });
-      }
+    // Convert base64 image to fal.ai storage URL
+    let finalImageUrl: string;
+    try {
+      console.log('Uploading image to fal.ai storage...');
+      
+      // Convert base64 to blob
+      const base64Data = firstImage.data;
+      const buffer = Buffer.from(base64Data, 'base64');
+      const blob = new Blob([buffer], { type: firstImage.mime_type || 'image/jpeg' });
+      
+      // Upload to fal.ai storage
+      finalImageUrl = await fal.storage.upload(blob);
+      console.log('Image uploaded to fal.ai:', finalImageUrl);
+      
+    } catch (uploadError) {
+      console.error('Failed to upload image to fal.ai:', uploadError);
+      return res.status(500).json({ error: 'Failed to upload image' });
     }
 
-    // Generate unique job ID
-    const jobId = uuidv4();
+    // Update job with image URL
+    await updateJobWithImageUrl(jobId, finalImageUrl);
 
-    // Set initial status in Redis
-    await redis.set(`job:${jobId}`, JSON.stringify({ 
-      status: 'pending',
-      type: 'dancing-video',
-      createdAt: new Date().toISOString()
-    }), { ex: 86400 });
-
-    // Respond immediately with job ID
-    res.status(202).json({ jobId });
+    // Respond immediately
+    res.status(200).json({ message: 'Video generation started' });
 
     // Use waitUntil to process in background without blocking the response
     waitUntil(
-      processDancingVideoInBackground(jobId, finalImageUrl, prompt).catch((error: Error) => {
-        console.error('Background processing error:', error);
-        
-        // Update Redis with error status
-        redis.set(
-          `job:${jobId}`, 
-          JSON.stringify({ 
-            status: 'error', 
-            type: 'dancing-video',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            updatedAt: new Date().toISOString()
-          }), 
-          { ex: 86400 }
-        );
+      processDancingVideoInBackground(jobId, finalImageUrl, "Create an engaging dancing video with smooth movements and good lighting").catch((error: Error) => {
+        console.error('Background video processing error:', error);
+        updateJobWithError(jobId, error instanceof Error ? error.message : 'Unknown error');
       })
     );
 
@@ -100,5 +82,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!res.headersSent) {
       res.status(500).json({ error: 'Internal server error' });
     }
+  }
+}
+
+// Helper functions to update job status
+async function updateJobWithImageUrl(jobId: string, imageUrl: string) {
+  const currentJobData = await redis.get(`job:${jobId}`);
+  if (!currentJobData) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+  
+  const jobData = currentJobData as JobData & { type: 'video' };
+  const updatedJobData: JobData = {
+    ...jobData,
+    imageUrl,
+    status: 'processing',
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
+}
+
+async function updateJobWithError(jobId: string, errorMessage: string) {
+  try {
+    const currentJobData = await redis.get(`job:${jobId}`);
+    if (currentJobData) {
+      const jobData = currentJobData as JobData & { type: 'video' };
+      const errorJobData: JobData = {
+        ...jobData,
+        status: 'error',
+        error: errorMessage,
+        updatedAt: new Date().toISOString(),
+      };
+      await redis.set(`job:${jobId}`, JSON.stringify(errorJobData), { ex: 86400 });
+    }
+  } catch (error) {
+    console.error('Error updating job with error:', error);
   }
 } 

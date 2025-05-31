@@ -3,83 +3,150 @@
 import { useEffect, useState, useCallback } from "react"
 import { useStore } from "@/lib/store"
 import { useRouter } from "next/navigation"
-import { Download, Share, RefreshCw, Heart } from "lucide-react"
+import { Download, Share, RefreshCw, Heart, Music, Video } from "lucide-react"
 import Image from "next/image"
 
 export default function ResultPage() {
-  const { jobId, status, imageUrl, setStatus, setImageUrl, resetMatch } = useStore()
+  const { 
+    songJobId, 
+    songStatus, 
+    songResult, 
+    videoJobId, 
+    videoStatus, 
+    videoResult,
+    updateSongStatus,
+    updateSongResult,
+    updateVideoStatus,
+    updateVideoResult,
+    resetMatch 
+  } = useStore()
+  
   const router = useRouter()
-  const [polling, setPolling] = useState(false)
-  const [analysis, setAnalysis] = useState<string>("")
   const [mounted, setMounted] = useState(false)
-  const [videoUrl, setVideoUrl] = useState<string>("")
-  const [contentType, setContentType] = useState<'image' | 'video'>('image')
+  const [songPolling, setSongPolling] = useState(false)
+  const [videoPolling, setVideoPolling] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  const pollJobStatus = useCallback(async () => {
-    if (polling) return
+  const pollSongStatus = useCallback(async () => {
+    if (songPolling) return
     
-    setPolling(true)
+    setSongPolling(true)
     
     const poll = async () => {
       try {
-        const response = await fetch(`/api/job-status?jobId=${jobId}`)
+        const response = await fetch(`/api/job-status?jobId=${songJobId}`)
         
         if (!response.ok) {
-          throw new Error('Failed to fetch job status')
+          throw new Error('Failed to fetch song job status')
         }
 
         const data = await response.json()
         
-        if (data.status === 'done') {
-          setStatus('done')
+        if (data.status === 'completed') {
+          updateSongStatus('completed')
           
-          // Handle both image and video results
-          if (data.imageUrl) {
-            setImageUrl(data.imageUrl)
-            setContentType('image')
-          } else if (data.videoUrl) {
-            setVideoUrl(data.videoUrl)
-            setContentType('video')
-          }
-          
-          setAnalysis(data.analysis || "")
-          setPolling(false)
+          // Handle song result - extract relevant fields
+          updateSongResult({
+            audioUrl: data.audioUrl,
+            lyrics: data.lyrics,
+            analysis: data.analysis,
+            style: data.style,
+            sunoTaskId: data.sunoTaskId
+          })
+          setSongPolling(false)
         } else if (data.status === 'error') {
-          setStatus('error')
-          setPolling(false)
+          updateSongStatus('error')
+          setSongPolling(false)
         } else {
           // Still pending, poll again in 2 seconds
           setTimeout(poll, 2000)
         }
       } catch (error) {
-        console.error('Polling error:', error)
-        setStatus('error')
-        setPolling(false)
+        console.error('Song polling error:', error)
+        updateSongStatus('error')
+        setSongPolling(false)
       }
     }
 
     poll()
-  }, [polling, jobId])
+  }, [songJobId, songPolling, updateSongStatus, updateSongResult])
+
+  const pollVideoStatus = useCallback(async () => {
+    if (videoPolling) return
+    
+    setVideoPolling(true)
+    
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/job-status?jobId=${videoJobId}`)
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch video job status')
+        }
+
+        const data = await response.json()
+        
+        if (data.status === 'completed') {
+          updateVideoStatus('completed')
+          
+          // Handle video result - extract relevant fields
+          updateVideoResult({
+            videoUrl: data.videoUrl,
+            imageUrl: data.imageUrl,
+            enhancedPrompt: data.enhancedPrompt,
+            falRequestId: data.falRequestId
+          })
+          setVideoPolling(false)
+        } else if (data.status === 'error') {
+          updateVideoStatus('error')
+          setVideoPolling(false)
+        } else {
+          // Still pending, poll again in 2 seconds
+          setTimeout(poll, 2000)
+        }
+      } catch (error) {
+        console.error('Video polling error:', error)
+        updateVideoStatus('error')
+        setVideoPolling(false)
+      }
+    }
+
+    poll()
+  }, [videoJobId, videoPolling, updateVideoStatus, updateVideoResult])
 
   useEffect(() => {
     if (!mounted) return
     
-    if (!jobId) {
+    // If we have a song job, poll for song status
+    if (songJobId && songStatus === 'pending') {
+      pollSongStatus()
+    }
+  }, [songJobId, songStatus, mounted, pollSongStatus])
+
+  useEffect(() => {
+    if (!mounted) return
+    
+    // If we have a video job, poll for video status
+    if (videoJobId && videoStatus === 'pending') {
+      pollVideoStatus()
+    }
+  }, [videoJobId, videoStatus, mounted, pollVideoStatus])
+
+  useEffect(() => {
+    if (!mounted) return
+    
+    // Only redirect if we have NO jobs at all
+    if (!songJobId && !videoJobId) {
       router.push('/')
       return
     }
-
-    if (status === 'pending') {
-      pollJobStatus()
-    }
-  }, [jobId, status, mounted, router, pollJobStatus])
+  }, [songJobId, videoJobId, mounted, router])
 
   const handleDownload = async () => {
-    const url = contentType === 'video' ? videoUrl : imageUrl
+    const url = videoResult?.videoUrl || songResult?.audioUrl
     if (!url) return
 
     try {
@@ -89,8 +156,8 @@ export default function ResultPage() {
       const a = document.createElement('a')
       a.href = downloadUrl
       
-      const extension = contentType === 'video' ? 'mp4' : 'png'
-      a.download = `serenade-match-${jobId}.${extension}`
+      const extension = videoResult?.videoUrl ? 'mp4' : 'mp3'
+      a.download = `serenade-match-${videoJobId || songJobId}.${extension}`
       
       document.body.appendChild(a)
       a.click()
@@ -102,7 +169,7 @@ export default function ResultPage() {
   }
 
   const handleShare = async () => {
-    const url = contentType === 'video' ? videoUrl : imageUrl
+    const url = videoResult?.videoUrl || songResult?.audioUrl
     if (!url) return
 
     if (navigator.share) {
@@ -122,7 +189,7 @@ export default function ResultPage() {
   }
 
   const fallbackShare = () => {
-    const url = contentType === 'video' ? videoUrl : imageUrl
+    const url = videoResult?.videoUrl || songResult?.audioUrl
     if (url) {
       navigator.clipboard.writeText(url)
       // You could add a toast notification here
@@ -140,7 +207,7 @@ export default function ResultPage() {
   }
 
   // Show loading state if we don't have a jobId yet
-  if (!jobId) {
+  if (!songJobId && !videoJobId) {
     return (
       <div className="min-h-screen w-full flex flex-col items-center justify-center relative bg-gradient-to-b from-[#4C0575] to-[#FF1493] p-6">
         <div className="text-white text-center">
@@ -193,7 +260,7 @@ export default function ResultPage() {
         </div>
 
         {/* Status-based content */}
-        {status === 'pending' && (
+        {(songStatus === 'pending' || videoStatus === 'pending') && (
           <div className="flex flex-col items-center space-y-6">
             <div className="animate-pulse">
               <Heart className="w-16 h-16 text-[#FF1493] fill-current" />
@@ -203,7 +270,7 @@ export default function ResultPage() {
                 Creating Your Perfect Match
               </h2>
               <p className="text-white/80">
-                Our AI is analyzing the profile and generating someone special just for you...
+                Our AI is analyzing the profile and generating something special just for you...
               </p>
             </div>
             <div className="flex items-center space-x-2">
@@ -213,46 +280,27 @@ export default function ResultPage() {
           </div>
         )}
 
-        {status === 'done' && (imageUrl || videoUrl) && (
+        {/* Song Results */}
+        {songStatus === 'completed' && songResult?.audioUrl && (
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-white text-xl font-semibold mb-2">
-                Here&apos;s Your Perfect Match! 💕
+                Your Perfect Song! 🎵
               </h2>
               <p className="text-white/80 text-sm">
                 Based on AI analysis of their profile
               </p>
             </div>
 
-            {/* Generated Content */}
-            <div className="relative rounded-xl overflow-hidden shadow-2xl">
-              {contentType === 'image' && imageUrl ? (
-                <>
-                  <Image
-                    src={imageUrl}
-                    alt="Your perfect match"
-                    width={400}
-                    height={400}
-                    className="w-full h-auto"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-                </>
-              ) : contentType === 'video' && videoUrl ? (
-                <>
-                  <video
-                    src={videoUrl}
-                    controls
-                    autoPlay
-                    muted
-                    loop
-                    className="w-full h-auto"
-                    style={{ maxHeight: '400px' }}
-                  >
-                    Your browser does not support the video tag.
-                  </video>
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
-                </>
-              ) : null}
+            {/* Audio Player */}
+            <div className="relative rounded-xl overflow-hidden shadow-2xl bg-white/10 backdrop-blur-sm p-6">
+              <audio
+                src={songResult.audioUrl}
+                controls
+                className="w-full"
+              >
+                Your browser does not support the audio element.
+              </audio>
             </div>
 
             {/* Action Buttons */}
@@ -262,7 +310,7 @@ export default function ResultPage() {
                 className="flex-1 flex items-center justify-center space-x-2 bg-white/20 backdrop-blur-sm text-white py-3 rounded-xl border border-white/30 hover:bg-white/30 transition-all"
               >
                 <Download className="w-4 h-4" />
-                <span>Download {contentType === 'video' ? 'Video' : 'Image'}</span>
+                <span>Download Song</span>
               </button>
               
               <button
@@ -274,19 +322,40 @@ export default function ResultPage() {
               </button>
             </div>
 
-            {/* Analysis */}
-            {analysis && (
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-                <h3 className="text-white font-semibold mb-2">AI Analysis</h3>
-                <p className="text-white/90 text-sm leading-relaxed">
-                  {analysis}
-                </p>
-              </div>
-            )}
           </div>
         )}
 
-        {status === 'error' && (
+        {/* Video Results */}
+        {videoStatus === 'completed' && videoResult?.videoUrl && (
+          <div className="space-y-6 mt-6">
+            <div className="text-center">
+              <h2 className="text-white text-xl font-semibold mb-2">
+                Your Perfect Video! 🎬
+              </h2>
+              <p className="text-white/80 text-sm">
+                AI-generated dancing video
+              </p>
+            </div>
+
+            {/* Video Player */}
+            <div className="relative rounded-xl overflow-hidden shadow-2xl">
+              <video
+                src={videoResult.videoUrl}
+                controls
+                autoPlay
+                muted
+                loop
+                className="w-full h-auto"
+                style={{ maxHeight: '400px' }}
+              >
+                Your browser does not support the video tag.
+              </video>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+            </div>
+          </div>
+        )}
+
+        {(songStatus === 'error' || videoStatus === 'error') && (
           <div className="flex flex-col items-center space-y-6 text-center">
             <div className="text-red-400">
               <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 20 20">
@@ -298,7 +367,7 @@ export default function ResultPage() {
                 Something Went Wrong
               </h2>
               <p className="text-white/80 mb-4">
-                We couldn&apos;t generate your match. Please try again.
+                We couldn&apos;t generate your content. Please try again.
               </p>
               <button
                 onClick={handleStartOver}

@@ -93,7 +93,7 @@ Transitions: use cubic-bezier(0.25, 0.1, 0.25, 1) for all transforms.
 - **File**: `src/pages/api/generate.background.ts`
 - **Responsibilities**:
   1. Receive job data from create-job endpoint
-  2. Call OpenAI Vision API to analyze dating profile screenshot
+  2. Call OpenRouter API to analyze dating profile screenshot
   3. Call OpenAI DALL-E API to generate ideal match image
   4. Upload generated image to S3
   5. Update Redis status store with `status: "done"` and `imageUrl`
@@ -101,9 +101,9 @@ Transitions: use cubic-bezier(0.25, 0.1, 0.25, 1) for all transforms.
   - Runtime: nodejs18.x
   - Max execution: 15 minutes (900 seconds)
   - Responds immediately to avoid timeout, processes in background
-- **OpenAI Integration**:
-  - Vision API: Analyze uploaded dating profile screenshot
-  - DALL-E 3: Generate image of ideal match based on analysis
+- **AI Integration**:
+  - OpenRouter (Claude 3.5 Sonnet): Analyze uploaded dating profile screenshot with vision capabilities
+  - OpenAI DALL-E 3: Generate image of ideal match based on analysis
 
 ---
 
@@ -250,8 +250,11 @@ In your Upstash Console, click "REST API" to get your credentials:
 
 Create `.env.local`:
 ```bash
-# OpenAI Configuration
-OPENAI_API_KEY=your_openai_api_key
+# OpenRouter Configuration
+OPENROUTER_API_KEY=sk-or-your-openrouter-api-key-here
+
+# OpenAI Configuration (for DALL-E image generation)
+OPENAI_API_KEY=your_openai_api_key_here
 
 # fal.ai Configuration (for video generation)
 FAL_KEY=your_fal_api_key
@@ -265,6 +268,9 @@ AWS_ACCESS_KEY_ID=your_aws_access_key
 AWS_SECRET_ACCESS_KEY=your_aws_secret_key
 AWS_REGION=us-east-1
 S3_BUCKET_NAME=your_s3_bucket_name_here
+
+# Optional: Your site URL for OpenRouter headers
+YOUR_SITE_URL=https://your-site.com
 ```
 
 ### 2. Install Dependencies
@@ -286,8 +292,8 @@ npm run dev
 
 ### 5. Key Features Implemented
 - ✅ Image upload with preview
-- ✅ OpenAI Vision API integration for profile analysis
-- ✅ DALL-E 3 integration for match image generation
+- ✅ OpenRouter API integration for profile analysis with vision capabilities
+- ✅ OpenAI DALL-E 3 integration for match image generation
 - ✅ S3 upload and signed URL generation
 - ✅ Redis-based job status tracking with Upstash REST API
 - ✅ Vercel Background Functions for long-running tasks
