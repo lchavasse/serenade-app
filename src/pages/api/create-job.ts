@@ -1,8 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { v4 as uuidv4 } from 'uuid';
 import redis from '@/lib/redis';
+import { waitUntil } from '@vercel/functions';
 
-// Import the background processing function for local development
+// Import the background processing function
 import { processImageInBackground } from './generate.background';
 
 // Configure API route to allow larger body sizes for image uploads
@@ -42,12 +43,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Respond immediately with job ID
     res.status(202).json({ jobId });
 
-    // For local development, process directly
-    // For production on Vercel, use HTTP calls to background function
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Local development: Processing images directly...');
-      
-      // Process in the background (don't await to avoid blocking)
+    // Use waitUntil to process in background without blocking the response
+    waitUntil(
       processImageInBackground(jobId, images).catch((error: Error) => {
         console.error('Background processing error:', error);
         
@@ -60,42 +57,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }), 
           { ex: 86400 }
         );
-      });
-    } else {
-      // In production, use Vercel Background Functions via HTTP
-      console.log('Production: Invoking background function via HTTP...');
-      
-      const backgroundResponse = await fetch(`${process.env.VERCEL_URL || 'http://localhost:3000'}/api/generate.background`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jobId,
-          images
-        })
-      });
-
-      if (!backgroundResponse.ok) {
-        const errorText = await backgroundResponse.text();
-        console.error('Background function failed:', errorText);
-        
-        // Update Redis with error status
-        await redis.set(
-          `job:${jobId}`, 
-          JSON.stringify({ 
-            status: 'error', 
-            error: 'Failed to start background processing'
-          }), 
-          { ex: 86400 }
-        );
-      } else {
-        console.log('Background function started successfully');
-      }
-    }
+      })
+    );
 
   } catch (error) {
     console.error('Error creating job:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    
+    // Only send response if it hasn't been sent already
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 } 
