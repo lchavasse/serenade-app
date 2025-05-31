@@ -272,6 +272,37 @@ export default function TestVideoPage() {
                   className="w-full max-w-md mx-auto rounded-lg shadow-lg"
                   poster={imagePreview || undefined}
                 />
+                
+                {/* Video URL for Lipsync */}
+                <div className="mt-4 bg-black/20 border border-cyan-400/20 rounded-lg p-4">
+                  <label className="text-cyan-200 font-semibold text-sm block mb-2">
+                    Video URL (for lipsync testing):
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      value={jobStatus.videoUrl}
+                      readOnly
+                      className="flex-1 bg-black/50 border border-cyan-400/30 text-cyan-100 text-xs rounded p-2 font-mono"
+                    />
+                    <button
+                      onClick={() => {
+                        if (jobStatus.videoUrl) {
+                          navigator.clipboard.writeText(jobStatus.videoUrl);
+                          // You could add a toast here
+                          alert('Video URL copied to clipboard!');
+                        }
+                      }}
+                      className="bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-2 rounded text-xs font-semibold transition-colors"
+                    >
+                      📋 Copy
+                    </button>
+                  </div>
+                  <p className="text-cyan-300/70 text-xs mt-2">
+                    Copy this URL to use in the lipsync test page (/test-lipsync)
+                  </p>
+                </div>
+                
                 <div className="mt-4">
                   <button
                     onClick={() => window.open(jobStatus.videoUrl, '_blank')}
