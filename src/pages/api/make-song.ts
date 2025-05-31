@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
+import { songPrompt } from '../prompts';
 
 // Configure OpenAI SDK to use OpenRouter
 const openrouter = new OpenAI({
@@ -20,6 +21,8 @@ interface SongResponse {
 interface SongRequest {
   user_profile: string;
   match_profile: string;
+  match_captions?: string; // Raw JSON string from caption-profile
+  how_flirt: string;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<SongResponse>) {
@@ -32,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   }
 
   try {
-    const { user_profile, match_profile }: SongRequest = req.body;
+    const { user_profile, match_profile, match_captions, how_flirt }: SongRequest = req.body;
 
     if (!user_profile || !match_profile) {
       return res.status(400).json({ 
@@ -53,90 +56,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     console.log(`Generating songing!"`);
 
     // Create a detailed prompt for song generation
-    const songPrompt = `
-    You are “LyricSmith,” a specialist in writing short-form, hook-heavy choruses for social-video platforms.
-
-## INPUT (from the user role)  
-
-<User>: User's profile JSON
-ProfileJSON
-<User>: Match's profile JSON
-ProfileJSON
-Match's image captions
-ProfileCaptions
-
-## SCHEMA
-
-ProfileJSON adheres to 
-{
-  "basic": { "name": "", "age": 0, "gender": "", "height": "", "location": "" , "preferred_relationship_type": "",  "kind_of_dating": "", "sexual_oreintation": ""},
-  "personality_humour": "",
-  "interests_lifestyle": "",
-  "fashion_aesthetic": "",
-  "music_culture": "",
-  "relationship_emotion": "",
-  "visual_cues": "",
-  "hooks_quotes": []
-}
-
-ProfileCaptions adheres to
-[
-  {
-    "caption": "<sentence>",
-    "notable_items": {
-      "drinks":        ["<exact drink names>"],
-      "foods_snacks":  ["<visible foods/snacks>"],
-      "clothing":      ["<notable garments or accessories>"],
-      "pets_animals":  ["<species/breed>"],
-      "music_gear":    ["<instruments or DJ gear>"],
-      "party_festival":["<wristbands, glowsticks, tents, etc.>"],
-      "other":         ["<anything else worth noting>"]
-    },
-    "scene":   "<one of: indoor | outdoor | nightlife | festival | cafe | beach | unknown>",
-    "emotion": "<one of: happy | relaxed | excited | neutral | sad | unknown>"
-     "guess": "<sentence>",
-  }
-  , … (one object per photo) …
-]
-
-## YOUR TASK
-
-Detect genuine common ground. Pick exactly 2–3 overlaps or closely-related traits. The song is primarily about the match and the not user for which we have the JSON its a nice to have if there is something in common otherwise focus on the match.
-
-VERY IMPORTANT to mention the match's name in the first few lyrics so that they its personalised to them
-
-Write a chorus.
-• 6–8 short lines (so it sings naturally for 15–30 s at ≈100 BPM).
-• Keep tight rhyme or internal assonance; no verses, no bridge, no emojis.
-• Do not invent facts—reuse phrases from the profiles when helpful (e.g. “espresso martini”).
-
-Add one production note. One sentence naming tempo, vibe/genre, and any key sonic elements (e.g., “bright synth stabs over four-on-the-floor kick”).
-
-OUTPUT — SCHEMA VALID JSON ONLY
-
-lyrics: line1\\nline2
-style_prompt: "..."
-"reasoning": "..."
-
-{
-  "lyrics": "",
-  "style_prompt": "...",
-  "reasoning": "..."
-}
-
-STRICTNESS RULES
-
-If you return anything outside that JSON object (including apologies or extra keys) the call is considered invalid.
-
-Lyrics must focus on the chosen overlaps; ignore unrelated profile details.
-
-No emojis, no line numbers, no markdown formatting.`;
+    const prompt = songPrompt(how_flirt);
+    
     const response = await openrouter.chat.completions.create({
       model: "anthropic/claude-3.7-sonnet",
       messages: [
         {
           role: "system",
-          content: songPrompt
+          content: prompt
         },
         {
           role: "user",
@@ -150,6 +77,13 @@ No emojis, no line numbers, no markdown formatting.`;
           content: `
           Match profile
           ${match_profile}
+          `
+        },
+        {
+          role: "user",
+          content: `
+          Match captions
+          ${match_captions}
           `
         }
       ],

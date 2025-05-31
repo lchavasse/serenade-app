@@ -72,6 +72,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let jobData: JobData;
     
     if (jobType === 'song') {
+      // Extract how_flirt and user_profile from the request body
+      const {how_flirt, user_profile} = req.body;
+
+    
       jobData = {
         jobId,
         type: 'song',
@@ -82,7 +86,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       
       // Start song generation in background
       waitUntil(
-        processSongInBackground(jobId, images).catch((error: Error) => {
+        processSongInBackground(jobId, images, how_flirt, user_profile).catch((error: Error) => {
           console.error('Song processing error:', error);
           updateJobWithError(jobId, error.message);
         })
@@ -149,10 +153,10 @@ async function updateJobWithError(jobId: string, errorMessage: string) {
 }
 
 // Song processing function
-async function processSongInBackground(jobId: string, images: { data: string; mime_type: string }[]) {
+async function processSongInBackground(jobId: string, images: { data: string; mime_type: string }[], how_flirt: string, user_profile: { name: string, passions: string }) {
   // Import here to avoid circular dependencies
   const { generateSong } = await import('./generate.background');
-  await generateSong(jobId, images);
+  await generateSong(jobId, images, how_flirt, user_profile);
 }
 
 // Video processing function  
