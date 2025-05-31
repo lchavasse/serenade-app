@@ -2,18 +2,89 @@
 
 import type React from "react"
 import { useState } from "react"
-import { ArrowRight, Plus } from "lucide-react"
+import { ArrowRight, Plus, Loader } from "lucide-react"
+import { useStore } from "@/lib/store"
+import { useRouter } from "next/navigation"
 
 export default function SerenadeSplash() {
-  const [name, setName] = useState("")
   const [photo, setPhoto] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  
+  const { setScreenshot, setJobId, setStatus } = useStore()
+  const router = useRouter()
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
       setPhoto(file)
       setPhotoPreview(URL.createObjectURL(file))
+    }
+  }
+
+  const convertFileToBlob = (file: File): Promise<Blob> => {
+    return new Promise((resolve) => {
+      resolve(file)
+    })
+  }
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = () => {
+        const result = reader.result as string
+        // Remove data:image/jpeg;base64, prefix
+        const base64Data = result.split(',')[1]
+        resolve(base64Data)
+      }
+      reader.onerror = error => reject(error)
+    })
+  }
+
+  const handleSubmit = async () => {
+    if (!photo) return
+
+    setIsUploading(true)
+    setStatus('pending')
+
+    try {
+      // Convert file to blob and store in state
+      const blob = await convertFileToBlob(photo)
+      setScreenshot(blob)
+
+      // Convert to base64 for API
+      const base64Data = await fileToBase64(photo)
+
+      // Submit to API
+      const response = await fetch('/api/create-job', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: {
+            data: base64Data,
+            mime_type: photo.type
+          }
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to create job')
+      }
+
+      const { jobId } = await response.json()
+      setJobId(jobId)
+
+      // Navigate to result page
+      router.push('/result')
+
+    } catch (error) {
+      console.error('Upload error:', error)
+      setStatus('error')
+    } finally {
+      setIsUploading(false)
     }
   }
 
@@ -73,23 +144,26 @@ export default function SerenadeSplash() {
           Serenade
         </h1>
 
-        {/* Name Input */}
-        <input
-          type="text"
-          placeholder="Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full max-w-[90%] bg-white bg-opacity-20 text-white placeholder-white rounded-[12px] px-4 py-3 border border-white border-opacity-30 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 backdrop-blur-sm"
-        />
+        {/* Tagline */}
+        <p className="text-white/90 text-center text-lg drop-shadow-lg max-w-xs">
+          Upload their profile, discover your perfect match
+        </p>
 
         {/* Photo Upload Area */}
         <div className="relative w-[200px] h-[200px] rounded-[16px] border-[3px] border-dashed border-white flex items-center justify-center backdrop-blur-sm">
           {photoPreview ? (
-            <img
-              src={photoPreview || "/placeholder.svg"}
-              alt="Uploaded preview"
-              className="w-full h-full object-cover rounded-[14px]"
-            />
+            <div className="relative w-full h-full">
+              <img
+                src={photoPreview || "/placeholder.svg"}
+                alt="Uploaded preview"
+                className="w-full h-full object-cover rounded-[14px]"
+              />
+              {!isUploading && (
+                <label htmlFor="photo-upload" className="absolute inset-0 cursor-pointer">
+                  <input id="photo-upload" type="file" accept="image/*" onChange={handlePhotoChange} className="sr-only" />
+                </label>
+              )}
+            </div>
           ) : (
             <label htmlFor="photo-upload" className="cursor-pointer w-full h-full flex items-center justify-center">
               <Plus className="text-white w-12 h-12 drop-shadow-lg" />
@@ -98,11 +172,31 @@ export default function SerenadeSplash() {
           )}
         </div>
 
+        {/* Submit Button or Status */}
+        {photo && !isUploading && (
+          <button
+            onClick={handleSubmit}
+            className="flex items-center justify-center space-x-2 bg-gradient-to-r from-[#FF1493] to-[#00FFFF] text-white px-8 py-3 rounded-full font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+          >
+            <span>Generate Match</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        )}
+
+        {isUploading && (
+          <div className="flex items-center space-x-2 text-white">
+            <Loader className="w-5 h-5 animate-spin" />
+            <span>Creating your perfect match...</span>
+          </div>
+        )}
+
         {/* Caption */}
-        <div className="flex items-center text-white text-sm drop-shadow-lg">
-          <span>upload photo to get started</span>
-          <ArrowRight className="ml-2 w-4 h-4" />
-        </div>
+        {!photo && (
+          <div className="flex items-center text-white text-sm drop-shadow-lg">
+            <span>upload photo to get started</span>
+            <ArrowRight className="ml-2 w-4 h-4" />
+          </div>
+        )}
       </div>
     </div>
   )

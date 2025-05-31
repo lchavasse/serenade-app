@@ -1,38 +1,162 @@
-import { NextRequest, NextResponse } from "next/server";
-import fs from "fs/promises";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import redis from "../../lib/redis";
-import OpenAI from "openai";
+import { NextApiRequest, NextApiResponse } from 'next';
+import OpenAI from 'openai';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import redis from '@/lib/redis';
 
-export const config = { runtime: "nodejs", regions: ["iad1"] };
+// Configure runtime for background function
+export const config = {
+  runtime: 'nodejs18.x',
+  maxDuration: 900, // 15 minutes
+}
 
-export default async function handler(req: NextRequest) {
-  const { jobId, profile, image } = await req.json();
-  try {
-    // 1. Call your audio-video API...
-    // 2. Generate finalMediaBuffer (Buffer of MP4/MP3)
-    const finalMediaBuffer = Buffer.from(""); // TODO: Replace with actual generated media
-    // 3. Upload to S3
-    const s3 = new S3Client({ region: "eu-west-2" });
-    await s3.send(new PutObjectCommand({
-      Bucket: process.env.BUCKET_NAME!,
-      Key: `videos/${jobId}.mp4`,
-      Body: finalMediaBuffer,
-      ContentType: "video/mp4",
-      ACL: "private"
-    }));
-    // 4. Generate signed CloudFront URL
-    const shareUrl = await getSignedUrl(s3,
-      new PutObjectCommand({
-        Bucket: process.env.BUCKET_NAME!,
-        Key: `videos/${jobId}.mp4`
-      }), { expiresIn: 60 * 60 * 24 * 7 });
-    // 5. Update Redis status
-    await redis.set(`job:${jobId}`, JSON.stringify({ status: "done", shareUrl }), { ex: 86400 });
-  } catch (err) {
-    console.error(err);
-    await redis.set(`job:${jobId}`, JSON.stringify({ status: "error", shareUrl: null }), { ex: 3600 });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'eu-west-2',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
-  return NextResponse.json({ ok: true });
+
+  const { jobId, image } = req.body;
+
+  if (!jobId || !image) {
+    return res.status(400).json({ error: 'Missing jobId or image data' });
+  }
+
+  // Respond immediately to avoid timeout
+  res.status(200).json({ message: 'Background processing started' });
+
+  // Process in background
+  try {
+    await processImageInBackground(jobId, image);
+  } catch (error) {
+    console.error('Background processing error:', error);
+    
+    // Update Redis with error status
+    await redis.set(
+      `job:${jobId}`, 
+      JSON.stringify({ 
+        status: 'error', 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }), 
+      { ex: 86400 }
+    );
+  }
+}
+
+export async function processImageInBackground(jobId: string, image: { data: string; mime_type: string }) {
+  try {
+    console.log(`Starting background processing for job ${jobId}`);
+
+    // Validate required environment variables
+    if (!process.env.S3_BUCKET_NAME) {
+      throw new Error('S3_BUCKET_NAME environment variable is required');
+    }
+    if (!process.env.AWS_ACCESS_KEY_ID) {
+      throw new Error('AWS_ACCESS_KEY_ID environment variable is required');
+    }
+    if (!process.env.AWS_SECRET_ACCESS_KEY) {
+      throw new Error('AWS_SECRET_ACCESS_KEY environment variable is required');
+    }
+
+    // Step 1: Analyze the dating profile with OpenAI Vision
+    console.log('Step 1: Analyzing dating profile...');
+    const analysisResponse = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "You are given a photo of a person. Generate an image of their ideal dating partner."
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${image.mime_type};base64,${image.data}`
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: 500
+    });
+
+    const analysis = analysisResponse.choices[0].message.content;
+    console.log('Analysis completed:', analysis?.substring(0, 100) + '...');
+
+    // Step 2: Generate image of ideal match using DALL-E
+    console.log('Step 2: Generating ideal match image...');
+    const dalleResponse = await openai.images.generate({
+      model: "dall-e-3",
+      prompt: `Create a high-quality, realistic portrait photo of a person who would be the ideal romantic match based on this analysis: ${analysis}. The image should look like a professional dating profile photo - warm, inviting, and attractive. Focus on creating someone who would genuinely complement the person described.`,
+      size: "1024x1024",
+      quality: "standard",
+      n: 1,
+    });
+
+    if (!dalleResponse.data || !dalleResponse.data[0]?.url) {
+      throw new Error('Failed to generate image with DALL-E');
+    }
+
+    const generatedImageUrl = dalleResponse.data[0].url;
+    console.log('Image generated successfully');
+
+    // Step 3: Download the generated image
+    console.log('Step 3: Downloading generated image...');
+    const imageResponse = await fetch(generatedImageUrl);
+    const generatedImageBuffer = await imageResponse.arrayBuffer();
+
+    // Step 4: Upload to S3
+    console.log('Step 4: Uploading to S3...');
+    const s3Key = `images/${jobId}.png`;
+    const putCommand = new PutObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME!,
+      Key: s3Key,
+      Body: Buffer.from(generatedImageBuffer),
+      ContentType: 'image/png',
+    });
+
+    await s3Client.send(putCommand);
+    console.log('S3 upload completed');
+
+    // Step 5: Generate signed URL for sharing
+    console.log('Step 5: Generating signed URL...');
+    const getCommand = new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME!,
+      Key: s3Key,
+    });
+
+    const signedUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 604800 }); // 7 days
+
+    // Step 6: Update Redis with completion status
+    console.log('Step 6: Updating Redis with completion status...');
+    await redis.set(
+      `job:${jobId}`, 
+      JSON.stringify({ 
+        status: 'done', 
+        imageUrl: signedUrl,
+        analysis: analysis 
+      }), 
+      { ex: 86400 }
+    );
+
+    console.log(`Background processing completed successfully for job ${jobId}`);
+
+  } catch (error) {
+    console.error('Error in background processing:', error);
+    throw error; // Re-throw to be handled by caller
+  }
 }
