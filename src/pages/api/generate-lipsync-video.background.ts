@@ -57,90 +57,26 @@ export async function processLipsyncVideoInBackground(jobId: string, videoUrl: s
     console.log('Video URL:', videoUrl);
     console.log('Audio URL:', audioUrl);
     
+    // Construct the callback URL
+    const callbackUrl = `${process.env.YOUR_SITE_URL}/api/fal-lipsync-callback`;
+    console.log('Using lipsync callback URL:', callbackUrl);
+    
     const { request_id } = await fal.queue.submit("veed/lipsync", {
       input: {
         video_url: videoUrl,
         audio_url: audioUrl
-      }
+      },
+      webhookUrl: callbackUrl
     });
 
     console.log('Lipsync job submitted with request_id:', request_id);
+    console.log('Fal.ai will call our lipsync webhook when the video is ready');
 
-    // Update job with fal request ID
+    // Update job with fal request ID and set status to processing
     await updateJobWithFalRequestId(jobId, request_id);
+    await updateJobStatus(jobId, 'processing');
 
-    // Step 3: Poll for results every 15 seconds
-    console.log('Step 2: Polling for lipsync results...');
-    
-    let lipsyncReady = false;
-    let attempts = 0;
-    const maxAttempts = 240; // 60 minutes max (240 * 15 seconds)
-    
-    while (!lipsyncReady && attempts < maxAttempts) {
-      try {
-        attempts++;
-        console.log(`Polling attempt ${attempts}/${maxAttempts} for request_id: ${request_id}`);
-        
-        const status = await fal.queue.status("veed/lipsync", {
-          requestId: request_id,
-          logs: true
-        }) as { status: string; partial_result?: unknown; response_url?: string }; // Proper typing for fal.ai response
-
-        console.log('Status response:', status);
-
-        if (status.status === 'COMPLETED') {
-          console.log('Lipsync job completed, getting result...');
-          
-          try {
-            const result = await fal.queue.result("veed/lipsync", {
-              requestId: request_id
-            });
-            
-            console.log('Result data:', result.data);
-            console.log('Request ID:', result.requestId);
-            
-            const videoUrl = result.data.video.url;
-            console.log('✅ Video URL:', videoUrl);
-            
-            // Update job with final video URL (this will also set status to completed)
-            await updateJobWithVideoUrl(jobId, videoUrl);
-
-            lipsyncReady = true;
-            
-          } catch (error) {
-            console.error('Error getting result:', error);
-            throw error;
-          }
-        } else if (status.status === 'IN_PROGRESS' || status.status === 'IN_QUEUE') {
-          // Still in progress, wait 15 seconds before next poll
-          console.log(`Lipsync generation in progress (${status.status}), waiting 15 seconds...`);
-          
-          // Update job status to processing
-          await updateJobStatus(jobId, 'processing');
-          
-          await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15 seconds
-        } else {
-          // Handle any other status (like error states)
-          throw new Error(`Lipsync generation failed with status: ${status.status}`);
-        }
-        
-      } catch (pollingError) {
-        console.error(`Polling attempt ${attempts} failed:`, pollingError);
-        
-        // If it's a temporary error, continue polling
-        if (attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15 seconds before retry
-        } else {
-          throw pollingError;
-        }
-      }
-    }
-
-    if (!lipsyncReady) {
-      throw new Error('Lipsync generation timed out after maximum polling attempts');
-    }
-
-    console.log(`Lipsync video processing completed successfully for job ${jobId}`);
+    console.log(`Lipsync video processing job submitted successfully for job ${jobId}. Waiting for callback...`);
 
   } catch (error) {
     console.error('Error in lipsync video background processing:', error);

@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from "react"
 import { useStore } from "@/lib/store"
 import { useRouter } from "next/navigation"
-import { Download, Share, RefreshCw, Heart } from "lucide-react"
+import Image from "next/image"
+import { Download, Share, RefreshCw, Heart, RotateCcw } from "lucide-react"
 
 export default function ResultPage() {
   const { 
@@ -369,17 +370,24 @@ export default function ResultPage() {
       {/* Content */}
       <div className="relative z-10 w-full max-w-md mt-8 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="w-20"></div> {/* Spacer for centering */}
-          
-          <h1 className="text-white text-2xl font-bold">Your Match</h1>
-          
+        <div className="relative flex items-center justify-center">
+          {/* Reset button - positioned absolute top left */}
           <button
             onClick={handleStartOver}
-            className="text-white hover:text-[#00FFFF] transition-colors text-sm"
+            className="absolute left-0 text-white hover:text-[#00FFFF] transition-colors p-2 rounded-full hover:bg-white/10"
           >
-            Start Over
+            <RotateCcw className="w-5 h-5" />
           </button>
+          
+          {!(songStatus === 'pending' || videoStatus === 'pending' || lipsyncStatus === 'pending' || lipsyncStatus === 'processing') && (
+          <Image
+            src="/white-logo.png"
+            alt="Serenade Logo"
+            width={48}
+            height={48}
+            className="text-white drop-shadow-lg"
+          />
+          )}
         </div>
 
         {/* Status-based content */}
@@ -445,7 +453,7 @@ export default function ResultPage() {
                 Your Perfect Match! 🎵✨🎬
               </h2>
               <p className="text-white/80 text-sm">
-                AI-generated song + personalized dancing video
+                serenade your crush.
               </p>
             </div>
 
@@ -483,11 +491,11 @@ export default function ResultPage() {
               </button>
             </div>
 
-            {/* Show individual components as smaller previews */}
+            {/* Show individual components as smaller previews
             <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 space-y-3">
               <h3 className="text-white/80 text-sm font-medium">Components:</h3>
               <div className="grid grid-cols-2 gap-3">
-                {/* Song Preview */}
+                
                 {songResult?.audioUrl && (
                   <div className="space-y-2">
                     <p className="text-white/60 text-xs">Generated Song</p>
@@ -500,7 +508,7 @@ export default function ResultPage() {
                   </div>
                 )}
                 
-                {/* Original Video Preview */}
+                
                 {videoResult?.videoUrl && (
                   <div className="space-y-2">
                     <p className="text-white/60 text-xs">Original Video</p>
@@ -514,6 +522,7 @@ export default function ResultPage() {
                 )}
               </div>
             </div>
+            */}
           </div>
         )}
 

@@ -1,16 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { unlinkSync, writeFileSync, readFileSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import * as ffmpegStatic from 'fluent-ffmpeg';
 import redis from '@/lib/redis';
 import { JobData } from './create-job';
-
-// Type the ffmpeg function properly
-const ffmpeg = ffmpegStatic as unknown as typeof ffmpegStatic.default;
 
 interface SunoCallbackData {
   code: number;
@@ -34,81 +24,6 @@ interface SunoCallbackData {
       duration: number;
     }>;
   };
-}
-
-// Configure S3 client
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'eu-west-2',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
-
-/**
- * Trims audio to 30 seconds using ffmpeg
- * @param audioBuffer - The original audio buffer
- * @param jobId - Job ID for unique file naming
- * @returns Buffer containing the trimmed audio
- */
-async function trimAudioTo30Seconds(audioBuffer: ArrayBuffer, jobId: string): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const tempDir = tmpdir();
-    const inputPath = join(tempDir, `${jobId}_input.mp3`);
-    const outputPath = join(tempDir, `${jobId}_output.mp3`);
-
-    try {
-      // Write the input audio buffer to a temporary file
-      writeFileSync(inputPath, Buffer.from(audioBuffer));
-
-      // Use ffmpeg to trim the audio to 30 seconds
-      ffmpeg(inputPath)
-        .seekInput(0) // Start from beginning
-        .duration(30) // Limit to 30 seconds
-        .audioCodec('libmp3lame') // Ensure MP3 output
-        .audioBitrate('128k') // Set a reasonable bitrate
-        .format('mp3')
-        .on('end', () => {
-          try {
-            // Read the trimmed audio file
-            const trimmedBuffer = readFileSync(outputPath);
-            
-            // Clean up temporary files
-            unlinkSync(inputPath);
-            unlinkSync(outputPath);
-            
-            console.log(`Audio successfully trimmed to 30 seconds`);
-            resolve(trimmedBuffer);
-          } catch (error: unknown) {
-            console.error('Error reading trimmed audio file:', error);
-            // Clean up files even on error
-            try {
-              unlinkSync(inputPath);
-              unlinkSync(outputPath);
-            } catch {} // Ignore cleanup errors
-            reject(error);
-          }
-        })
-        .on('error', (error: Error) => {
-          console.error('FFmpeg error:', error);
-          // Clean up files on error
-          try {
-            unlinkSync(inputPath);
-            unlinkSync(outputPath);
-          } catch {} // Ignore cleanup errors
-          reject(error);
-        })
-        .save(outputPath);
-
-    } catch (error: unknown) {
-      console.error('Error setting up audio trimming:', error);
-      // Clean up input file if it was created
-      try {
-        unlinkSync(inputPath);
-      } catch {} // Ignore cleanup errors
-      reject(error);
-    }
-  });
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -174,51 +89,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const audioTrack = callbackData.data.data[0];
     console.log(`Processing audio track: ${audioTrack.title} (${audioTrack.duration}s)`);
 
-    // Download the audio file from Suno
-    console.log('Downloading audio from Suno...');
-    const audioResponse = await fetch(audioTrack.audio_url);
-    
-    if (!audioResponse.ok) {
-      throw new Error(`Failed to download audio: ${audioResponse.status} ${audioResponse.statusText}`);
+    // Send audio URL to trimmer server
+    console.log('Sending audio to trimmer server...');
+    const trimmerResponse = await fetch(`${process.env.AUDIO_TRIMMER_SERVER_URL}/trim`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jobId: jobId,
+        audioUrl: audioTrack.audio_url,
+        duration: 30,
+      }),
+    });
+
+    if (!trimmerResponse.ok) {
+      const errorText = await trimmerResponse.text();
+      throw new Error(`Trimmer server error: ${trimmerResponse.status} ${errorText}`);
     }
 
-    const audioBuffer = await audioResponse.arrayBuffer();
-    console.log(`Downloaded audio file: ${audioBuffer.byteLength} bytes`);
+    const trimmerResult = await trimmerResponse.json();
+    console.log('Trimmer server response:', trimmerResult);
 
-    // Trim audio to 30 seconds
-    console.log('Trimming audio to 30 seconds...');
-    const trimmedAudioBuffer = await trimAudioTo30Seconds(audioBuffer, jobId as string);
-    console.log(`Trimmed audio file: ${trimmedAudioBuffer.byteLength} bytes`);
+    if (!trimmerResult.success || !trimmerResult.signedUrl) {
+      throw new Error('Trimmer server did not return a valid signed URL');
+    }
 
-    // Upload trimmed audio to S3
-    console.log('Uploading trimmed audio to S3...');
-    const s3Key = `songs/${jobId}.mp3`;
-    const putCommand = new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME!,
-      Key: s3Key,
-      Body: trimmedAudioBuffer,
-      ContentType: 'audio/mpeg',
-    });
-
-    await s3Client.send(putCommand);
-    console.log('S3 upload completed');
-
-    // Generate signed URL for sharing
-    console.log('Generating signed URL...');
-    const getCommand = new GetObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME!,
-      Key: s3Key,
-    });
-
-    const signedUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 604800 }); // 7 days
-
-    // Update job to completed status with audio URL
+    // Update job to completed status with audio URL from trimmer server
     console.log('Updating job to completed status...');
     
     const updatedJobData: JobData = {
       ...jobData,
       status: 'completed',
-      audioUrl: signedUrl,
+      audioUrl: trimmerResult.signedUrl,
       updatedAt: new Date().toISOString(),
     };
     
@@ -233,6 +136,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   } catch (error) {
     console.error('Error handling Suno callback:', error);
+    
+    // If we have a jobId, update the job with error status
+    if (req.body?.data?.task_id) {
+      const jobId = await redis.get(`suno:${req.body.data.task_id}`);
+      if (jobId) {
+        await updateJobWithError(jobId as string, `Error processing callback: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
     
     // Still return 200 to acknowledge receipt even if there's an error
     return res.status(200).json({ message: 'Callback received with error' });

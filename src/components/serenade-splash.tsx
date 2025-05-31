@@ -497,26 +497,13 @@ export default function SerenadeSplash() {
         {/* Header */}
         <div className="flex flex-col items-center mb-8 mt-8">
           {/* Dripping Heart Icon */}
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 48 48"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
+          <Image
+            src="/white-logo.png"
+            alt="Serenade Logo"
+            width={48}
+            height={48}
             className="text-white drop-shadow-lg mb-4"
-          >
-            <path
-              d="M24 36L12 24C8 20 8 14 12 10C16 6 22 6 26 10L24 12L22 10C18 6 12 6 8 10C4 14 4 20 8 24L20 36C21.3333 37.3333 22.6667 37.3333 24 36Z"
-              fill="white"
-            />
-            <path
-              d="M24 36C25.3333 37.3333 26.6667 37.3333 28 36L40 24C44 20 44 14 40 10C36 6 30 6 26 10L24 12L22 10"
-              fill="white"
-            />
-            <path d="M24 36V44" stroke="white" strokeWidth="2" strokeLinecap="round" />
-            <path d="M20 40V46" stroke="white" strokeWidth="2" strokeLinecap="round" />
-            <path d="M28 42V48" stroke="white" strokeWidth="2" strokeLinecap="round" />
-          </svg>
+          />
 
           <h1 
             className="text-white text-[72px] text-center leading-tight tracking-wider drop-shadow-lg"

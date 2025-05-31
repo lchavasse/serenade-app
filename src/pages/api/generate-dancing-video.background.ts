@@ -161,6 +161,10 @@ Output only the final video prompt (no explanation or extras).
     // Step 3: Submit job to fal.ai
     console.log('Step 2: Submitting video generation job to fal.ai...');
     
+    // Construct the callback URL
+    const callbackUrl = `${process.env.YOUR_SITE_URL}/api/fal-kling-callback`;
+    console.log('Using callback URL:', callbackUrl);
+    
     const { request_id } = await fal.queue.submit("fal-ai/kling-video/v2.1/standard/image-to-video", {
       input: {
         prompt: cleanedPrompt,
@@ -169,79 +173,18 @@ Output only the final video prompt (no explanation or extras).
         aspect_ratio: "9:16", // Mobile format
         negative_prompt: "blur, distort, and low quality", // Add default negative prompt
         cfg_scale: 0.5
-      }
+      },
+      webhookUrl: callbackUrl
     });
 
     console.log('Video generation job submitted with request_id:', request_id);
+    console.log('Fal.ai will call our webhook when the video is ready');
 
-    // Update job with fal request ID
+    // Update job with fal request ID and set status to processing
     await updateJobWithFalRequestId(jobId, request_id);
+    await updateJobStatus(jobId, 'processing');
 
-    // Step 4: Poll for completion
-    console.log('Step 3: Polling for video generation completion...');
-    
-    // Step 6: Poll for results every 15 seconds
-    console.log('Step 3: Polling for video generation results...');
-    
-    let videoReady = false;
-    let attempts = 0;
-    const maxAttempts = 240; // 60 minutes max (240 * 15 seconds)
-    
-    while (!videoReady && attempts < maxAttempts) {
-      try {
-        attempts++;
-        console.log(`Polling attempt ${attempts}/${maxAttempts} for request_id: ${request_id}`);
-        
-        const status = await fal.queue.status("fal-ai/kling-video/v2.1/standard/image-to-video", {
-          requestId: request_id,
-          logs: true
-        }) as { status: string; partial_result?: unknown }; // Proper typing for fal.ai response
-
-        console.log('Status response:', status);
-
-        if (status.status === 'COMPLETED') {
-          // Get the final result
-          const result = await fal.queue.result("fal-ai/kling-video/v2.1/standard/image-to-video", {
-            requestId: request_id
-          });
-
-          console.log('Video generation completed successfully');
-          
-          // Update job with video URL (this will also set status to completed)
-          await updateJobWithVideoUrl(jobId, result.data.video?.url);
-
-          videoReady = true;
-          
-        } else if (status.status === 'IN_PROGRESS' || status.status === 'IN_QUEUE') {
-          // Still in progress, wait 15 seconds before next poll
-          console.log(`Video generation in progress (${status.status}), waiting 15 seconds...`);
-          
-          // Update job status to processing
-          await updateJobStatus(jobId, 'processing');
-          
-          await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15 seconds
-        } else {
-          // Handle any other status (like error states)
-          throw new Error(`Video generation failed with status: ${status.status}`);
-        }
-        
-      } catch (pollingError) {
-        console.error(`Polling attempt ${attempts} failed:`, pollingError);
-        
-        // If it's a temporary error, continue polling
-        if (attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15 seconds before retry
-        } else {
-          throw pollingError;
-        }
-      }
-    }
-
-    if (!videoReady) {
-      throw new Error('Video generation timed out after maximum polling attempts');
-    }
-
-    console.log(`Dancing video generation completed successfully for job ${jobId}`);
+    console.log(`Dancing video generation job submitted successfully for job ${jobId}. Waiting for callback...`);
 
   } catch (error) {
     console.error('Error in dancing video background processing:', error);
