@@ -2,6 +2,28 @@
 
 Serenade is your secret weapon for sparking instant chemistry. Match with someone on Hinge, Tinder, or any app—snap a screenshot of their profile, drop it into Serenade, and we'll generate an image of your ideal match based on their profile. We deliver a shareable image link you can use—no awkward icebreakers required. Just AI-powered matchmaking magic.
 
+## System Requirements
+
+### FFmpeg Installation
+This application requires FFmpeg to be installed on the system for audio processing (trimming songs to 30 seconds for lip-sync videos).
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
+**Windows:**
+Download from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html) or use Chocolatey:
+```bash
+choco install ffmpeg
+```
+
 # Style Overview
 
 1. Brand Essence
@@ -254,7 +276,7 @@ Create `.env.local`:
 OPENROUTER_API_KEY=sk-or-your-openrouter-api-key-here
 
 # OpenAI Configuration (for DALL-E image generation)
-OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_API_KEY=your_openai_api_key
 
 # fal.ai Configuration (for video generation)
 FAL_KEY=your_fal_api_key

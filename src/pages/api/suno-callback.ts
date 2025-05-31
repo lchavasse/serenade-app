@@ -2,8 +2,15 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { unlinkSync, writeFileSync, readFileSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import * as ffmpegStatic from 'fluent-ffmpeg';
 import redis from '@/lib/redis';
 import { JobData } from './create-job';
+
+// Type the ffmpeg function properly
+const ffmpeg = ffmpegStatic as unknown as typeof ffmpegStatic.default;
 
 interface SunoCallbackData {
   code: number;
@@ -37,6 +44,72 @@ const s3Client = new S3Client({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
 });
+
+/**
+ * Trims audio to 30 seconds using ffmpeg
+ * @param audioBuffer - The original audio buffer
+ * @param jobId - Job ID for unique file naming
+ * @returns Buffer containing the trimmed audio
+ */
+async function trimAudioTo30Seconds(audioBuffer: ArrayBuffer, jobId: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const tempDir = tmpdir();
+    const inputPath = join(tempDir, `${jobId}_input.mp3`);
+    const outputPath = join(tempDir, `${jobId}_output.mp3`);
+
+    try {
+      // Write the input audio buffer to a temporary file
+      writeFileSync(inputPath, Buffer.from(audioBuffer));
+
+      // Use ffmpeg to trim the audio to 30 seconds
+      ffmpeg(inputPath)
+        .seekInput(0) // Start from beginning
+        .duration(30) // Limit to 30 seconds
+        .audioCodec('libmp3lame') // Ensure MP3 output
+        .audioBitrate('128k') // Set a reasonable bitrate
+        .format('mp3')
+        .on('end', () => {
+          try {
+            // Read the trimmed audio file
+            const trimmedBuffer = readFileSync(outputPath);
+            
+            // Clean up temporary files
+            unlinkSync(inputPath);
+            unlinkSync(outputPath);
+            
+            console.log(`Audio successfully trimmed to 30 seconds`);
+            resolve(trimmedBuffer);
+          } catch (error: unknown) {
+            console.error('Error reading trimmed audio file:', error);
+            // Clean up files even on error
+            try {
+              unlinkSync(inputPath);
+              unlinkSync(outputPath);
+            } catch {} // Ignore cleanup errors
+            reject(error);
+          }
+        })
+        .on('error', (error: Error) => {
+          console.error('FFmpeg error:', error);
+          // Clean up files on error
+          try {
+            unlinkSync(inputPath);
+            unlinkSync(outputPath);
+          } catch {} // Ignore cleanup errors
+          reject(error);
+        })
+        .save(outputPath);
+
+    } catch (error: unknown) {
+      console.error('Error setting up audio trimming:', error);
+      // Clean up input file if it was created
+      try {
+        unlinkSync(inputPath);
+      } catch {} // Ignore cleanup errors
+      reject(error);
+    }
+  });
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -112,13 +185,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const audioBuffer = await audioResponse.arrayBuffer();
     console.log(`Downloaded audio file: ${audioBuffer.byteLength} bytes`);
 
-    // Upload to S3
-    console.log('Uploading audio to S3...');
+    // Trim audio to 30 seconds
+    console.log('Trimming audio to 30 seconds...');
+    const trimmedAudioBuffer = await trimAudioTo30Seconds(audioBuffer, jobId as string);
+    console.log(`Trimmed audio file: ${trimmedAudioBuffer.byteLength} bytes`);
+
+    // Upload trimmed audio to S3
+    console.log('Uploading trimmed audio to S3...');
     const s3Key = `songs/${jobId}.mp3`;
     const putCommand = new PutObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME!,
       Key: s3Key,
-      Body: Buffer.from(audioBuffer),
+      Body: trimmedAudioBuffer,
       ContentType: 'audio/mpeg',
     });
 
