@@ -322,15 +322,6 @@ export default function ResultPage() {
               </button>
             </div>
 
-            {/* Song Analysis */}
-            {songResult.analysis && (
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-                <h3 className="text-white font-semibold mb-2">AI Analysis</h3>
-                <p className="text-white/90 text-sm leading-relaxed">
-                  {songResult.analysis}
-                </p>
-              </div>
-            )}
           </div>
         )}
 
