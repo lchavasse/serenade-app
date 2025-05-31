@@ -121,24 +121,6 @@ async function updateJobWithFalRequestId(jobId: string, falRequestId: string) {
   await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
 }
 
-async function updateJobWithVideoUrl(jobId: string, videoUrl: string) {
-  const currentJobData = await redis.get(`job:${jobId}`);
-  if (!currentJobData) {
-    throw new Error(`Job ${jobId} not found`);
-  }
-  
-  const jobData = currentJobData as JobData & { type: 'lipsync' };
-  const updatedJobData: JobData = {
-    ...jobData,
-    videoUrl,
-    originalVideoUrl: videoUrl, // Store the original video URL as well for backward compatibility
-    status: 'completed',
-    updatedAt: new Date().toISOString(),
-  };
-  
-  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
-}
-
 async function updateJobWithError(jobId: string, errorMessage: string) {
   try {
     const currentJobData = await redis.get(`job:${jobId}`);
