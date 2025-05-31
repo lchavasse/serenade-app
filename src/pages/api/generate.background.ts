@@ -11,7 +11,18 @@ export const config = {
   // Note: maxDuration is handled by Vercel deployment config, not Next.js API routes
 }
 
+// Configure OpenAI client to use OpenRouter
 const openai = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+  defaultHeaders: {
+    "HTTP-Referer": process.env.YOUR_SITE_URL || "https://serenade-app.vercel.app",
+    "X-Title": "Serenade App",
+  },
+});
+
+// Keep separate OpenAI client for DALL-E image generation
+const openaiDalle = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
@@ -69,15 +80,40 @@ export async function processImageInBackground(jobId: string, images: { data: st
     if (!process.env.AWS_SECRET_ACCESS_KEY) {
       throw new Error('AWS_SECRET_ACCESS_KEY environment variable is required');
     }
+    if (!process.env.OPENROUTER_API_KEY) {
+      throw new Error('OPENROUTER_API_KEY environment variable is required');
+    }
 
-    // Step 1: Analyze the dating profile with OpenAI Vision
+    // Step 1: Analyze the dating profile with OpenRouter
     console.log('Step 1: Analyzing dating profile...');
     
+    // Create a detailed prompt for the LLM analysis
+    const analysisPrompt = `
+    Extract information from images of dating-profile and output a JSON object that follows the given schema. Provide your judgment about the profile content for fields except "hooks_quotes," which should contain exact quotes. Focus on both the text content and the visuals and photos in the profile to make judgements about the user's personality humour, interests lifestyle, fashion aesthetic, music culture, relationship emotion and visual cues.
+
+SCHEMA:
+{
+  "basic": { "name": "", "age": 0, "gender": "", "height": "", "location": "" , "preferred_relationship_type": "",  "kind_of_dating": "", "sexual_oreintation": ""},
+  "personality_humour": "",
+  "interests_lifestyle": "",
+  "fashion_aesthetic": "",
+  "music_culture": "",
+  "relationship_emotion": "",
+  "visual_cues": "",
+  "hooks_quotes": []
+}
+
+# Output Format
+
+- Return a JSON object strictly adhering to the provided schema.
+- Fill fields with judgments based on the profile, except for "hooks_quotes," which should include exact quotes from the profile.
+    `;
+
     // Build content array with text prompt and all images
     const content = [
       {
         type: "text" as const,
-        text: `Analyze these ${images.length} dating profile photos. Look at the person's style, interests, activities, settings, and overall vibe shown across all the images. Based on this comprehensive view of their personality and lifestyle, describe what type of person would be their ideal romantic match - their potential interests, lifestyle, personality traits, and what they might look like. Create a detailed description for generating an attractive, compatible partner.`
+        text: analysisPrompt
       },
       ...images.map(image => ({
         type: "image_url" as const,
@@ -88,7 +124,7 @@ export async function processImageInBackground(jobId: string, images: { data: st
     ];
 
     const analysisResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "anthropic/claude-3.7-sonnet",
       messages: [
         {
           role: "user",
@@ -99,11 +135,11 @@ export async function processImageInBackground(jobId: string, images: { data: st
     });
 
     const analysis = analysisResponse.choices[0].message.content;
-    console.log('Analysis completed:', analysis?.substring(0, 100) + '...');
+    console.log('Analysis completed:', JSON.stringify(analysis, null, 2));
 
     // Step 2: Generate image of ideal match using DALL-E
     console.log('Step 2: Generating ideal match image...');
-    const dalleResponse = await openai.images.generate({
+    const dalleResponse = await openaiDalle.images.generate({
       model: "dall-e-3",
       prompt: `Create a high-quality, realistic portrait photo of a person who would be the ideal romantic match based on this analysis: ${analysis}. The image should look like a professional dating profile photo - warm, inviting, and attractive. Focus on creating someone who would genuinely complement the person described.`,
       size: "1024x1024",
