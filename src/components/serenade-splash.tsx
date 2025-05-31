@@ -1,13 +1,16 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { ArrowRight, Plus, Loader, X, User, Camera, Settings } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 
 export default function SerenadeSplash() {
+  // Hydration state
+  const [mounted, setMounted] = useState(false)
+  
   // Get user profile from store
   const { 
     userProfile, 
@@ -33,6 +36,39 @@ export default function SerenadeSplash() {
   const [outputType, setOutputType] = useState<'song' | 'video'>('song')
   
   const router = useRouter()
+
+  // Handle hydration
+  useEffect(() => {
+    setMounted(true)
+    
+    // Manual rehydration since we use skipHydration: true
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem('serenade-app-session')
+      if (stored) {
+        try {
+          const parsedState = JSON.parse(stored)
+          const storeState = parsedState?.state
+          
+          if (storeState) {
+            // Rehydrate user profile
+            if (storeState.userProfile) {
+              setUserProfile(storeState.userProfile)
+            }
+            if (storeState.profileComplete !== undefined) {
+              setProfileComplete(storeState.profileComplete)
+            }
+          }
+        } catch (error) {
+          console.error('Failed to rehydrate store:', error)
+        }
+      }
+    }
+  }, [setUserProfile, setProfileComplete])
+
+  // Don't render until mounted to avoid hydration mismatch
+  if (!mounted) {
+    return null
+  }
 
   // Rating labels
   const getRatingLabel = (value: number) => {
