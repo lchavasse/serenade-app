@@ -65,6 +65,48 @@ export default function SerenadeSplash() {
     }
   }, [setUserProfile, setProfileComplete])
 
+  // Helper function to recreate Blob from preview URL
+  const recreateBlobFromPreview = async (previewUrl: string): Promise<Blob> => {
+    try {
+      const response = await fetch(previewUrl)
+      const blob = await response.blob()
+      return blob
+    } catch (error) {
+      console.error('Failed to recreate blob from preview:', error)
+      throw new Error('Failed to recreate photo from preview')
+    }
+  }
+
+  // Check if we need to recreate photoBlob from photoPreview after hydration
+  useEffect(() => {
+    const recreatePhotoBlob = async () => {
+      if (mounted && userProfile.photoPreview && !userProfile.photoBlob) {
+        console.log('Recreating photoBlob from photoPreview after session restoration...')
+        try {
+          const recreatedBlob = await recreateBlobFromPreview(userProfile.photoPreview)
+          setUserProfile({
+            ...userProfile,
+            photoBlob: recreatedBlob
+          })
+          console.log('Successfully recreated photoBlob from preview URL')
+        } catch (error) {
+          console.error('Failed to recreate photoBlob:', error)
+          // If we can't recreate the blob, clear the preview and ask user to re-upload
+          setUserProfile({
+            ...userProfile,
+            photoPreview: null,
+            passions: ""
+          })
+          // Reset profile completion since photo is no longer valid
+          setProfileComplete(false)
+        }
+      }
+    }
+
+    recreatePhotoBlob()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, userProfile.photoPreview, userProfile.photoBlob])
+
   // Don't render until mounted to avoid hydration mismatch
   if (!mounted) {
     return null
@@ -218,7 +260,9 @@ export default function SerenadeSplash() {
   }
 
   const handleCompleteProfile = () => {
-    if (userProfile.name && userProfile.photoBlob && userProfile.passions) {
+    // Allow completion if we have name, passions, and either photoBlob OR photoPreview
+    // photoPreview without photoBlob can happen during session restoration
+    if (userProfile.name && (userProfile.photoBlob || userProfile.photoPreview) && userProfile.passions) {
       setProfileComplete(true)
     }
   }
@@ -314,7 +358,24 @@ export default function SerenadeSplash() {
         
         // Convert user profile photo to base64 for video generation
         if (!userProfile.photoBlob) {
-          throw new Error('User profile photo is required for video generation')
+          // Check if we have a preview URL but no blob (session restoration case)
+          if (userProfile.photoPreview) {
+            console.log('Photo blob missing but preview exists - attempting to recreate...')
+            try {
+              const recreatedBlob = await recreateBlobFromPreview(userProfile.photoPreview)
+              setUserProfile({
+                ...userProfile,
+                photoBlob: recreatedBlob
+              })
+              // Use the recreated blob for processing
+              userProfile.photoBlob = recreatedBlob
+            } catch (error) {
+              console.error('Failed to recreate blob during video generation:', error)
+              throw new Error('Your profile photo needs to be re-uploaded. Please go back and upload your photo again.')
+            }
+          } else {
+            throw new Error('User profile photo is required for video generation')
+          }
         }
         
         // Additional validation for mobile compatibility
@@ -559,7 +620,7 @@ export default function SerenadeSplash() {
             </div>
 
             {/* Complete Profile Button */}
-            {userProfile.name && userProfile.photoBlob && userProfile.passions && !isAnalyzingPassions && (
+            {userProfile.name && (userProfile.photoBlob || userProfile.photoPreview) && userProfile.passions && !isAnalyzingPassions && (
               <button
                 onClick={handleCompleteProfile}
                 className="flex items-center justify-center space-x-2 bg-gradient-to-r from-[#FF1493] to-[#00FFFF] text-white px-8 py-3 rounded-full font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
