@@ -7,8 +7,8 @@ import redis from '@/lib/redis';
 
 // Configure runtime for background function
 export const config = {
-  runtime: 'nodejs18.x',
-  maxDuration: 900, // 15 minutes
+  runtime: 'nodejs',
+  // Note: maxDuration is handled by Vercel deployment config, not Next.js API routes
 }
 
 const openai = new OpenAI({

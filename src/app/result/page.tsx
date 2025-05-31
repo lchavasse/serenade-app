@@ -226,7 +226,7 @@ export default function ResultPage() {
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-white text-xl font-semibold mb-2">
-                Here's Your Perfect Match! 💕
+                Here&apos;s Your Perfect Match! 💕
               </h2>
               <p className="text-white/80 text-sm">
                 Based on AI analysis of their profile
@@ -305,7 +305,7 @@ export default function ResultPage() {
                 Something Went Wrong
               </h2>
               <p className="text-white/80 mb-4">
-                We couldn't generate your match. Please try again.
+                We couldn&apos;t generate your match. Please try again.
               </p>
               <button
                 onClick={handleStartOver}
