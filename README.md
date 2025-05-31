@@ -165,9 +165,78 @@ Transitions: use cubic-bezier(0.25, 0.1, 0.25, 1) for all transforms.
   3. Respond immediately, process in background
   4. Update Redis with final status and image URL
 
+* **`POST /api/generate-dancing-video`**:
+  1. Generate `jobId` for dancing video generation
+  2. Initialize Redis status with type: 'dancing-video'
+  3. Invoke background processing
+  4. Respond `202 Accepted` with `{ jobId }`
+
+* **`POST /api/generate-dancing-video.background`**:
+  1. Receive `{ jobId, imageUrl, prompt }` from generate-dancing-video
+  2. Process with OpenAI GPT-4o to enhance prompt → fal.ai Kling video generation
+  3. Poll fal.ai every 15 seconds for completion
+  4. Update Redis with video URL when complete
+
 * **`GET /api/job-status`**:
   1. Read Redis key `job:<jobId>`
-  2. Return `{ status, imageUrl?, analysis? }` or `404` if missing
+  2. Return `{ status, imageUrl?, analysis?, videoUrl?, type? }` or `404` if missing
+  3. Works for both image generation and dancing video jobs
+
+---
+
+## Dancing Video Generation API
+
+The dancing video generation API creates AI-generated dancing videos from profile images.
+
+### Usage Example
+
+```javascript
+// 1. Submit video generation job
+const response = await fetch('/api/generate-dancing-video', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    imageUrl: 'https://example.com/profile-image.jpg',
+    prompt: 'dancing energetically at a party'
+  })
+});
+
+const { jobId } = await response.json();
+
+// 2. Poll for status every 15 seconds
+const pollStatus = async () => {
+  const statusResponse = await fetch(`/api/job-status?jobId=${jobId}`);
+  const status = await statusResponse.json();
+  
+  if (status.status === 'completed') {
+    console.log('Video ready:', status.videoUrl);
+    return status.videoUrl;
+  } else if (status.status === 'error') {
+    console.error('Error:', status.error);
+    return null;
+  } else {
+    console.log('Processing...', status.step, status.falStatus);
+    setTimeout(pollStatus, 15000); // Poll again in 15 seconds
+  }
+};
+
+pollStatus();
+```
+
+### Job Status Types
+
+For dancing video jobs, the status object includes:
+
+- **`type`**: 'dancing-video'
+- **`status`**: 'pending' | 'processing' | 'completed' | 'error'
+- **`step`**: Current processing step:
+  - 'enhancing-prompt': GPT-4o enhancing the user prompt
+  - 'submitting-video-job': Submitting to fal.ai
+  - 'generating-video': Video generation in progress
+- **`falStatus`**: Current fal.ai status ('IN_QUEUE' | 'IN_PROGRESS' | 'COMPLETED')
+- **`enhancedPrompt`**: The GPT-4o enhanced prompt used for video generation
+- **`videoUrl`**: Final video URL (when completed)
+- **`falRequestId`**: fal.ai request ID for tracking
 
 ---
 
@@ -183,6 +252,9 @@ Create `.env.local`:
 ```bash
 # OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key_here
+
+# fal.ai Configuration (for video generation)
+FAL_KEY=your_fal_api_key_here
 
 # Upstash Redis Configuration (REST API)
 UPSTASH_REDIS_REST_URL=https://your-redis-id.upstash.io
