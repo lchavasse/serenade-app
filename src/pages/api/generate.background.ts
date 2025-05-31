@@ -28,10 +28,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { jobId, image } = req.body;
+  const { jobId, images } = req.body;
 
-  if (!jobId || !image) {
-    return res.status(400).json({ error: 'Missing jobId or image data' });
+  if (!jobId || !images) {
+    return res.status(400).json({ error: 'Missing jobId or images data' });
   }
 
   // Respond immediately to avoid timeout
@@ -39,7 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Process in background
   try {
-    await processImageInBackground(jobId, image);
+    await processImageInBackground(jobId, images);
   } catch (error) {
     console.error('Background processing error:', error);
     
@@ -55,9 +55,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 }
 
-export async function processImageInBackground(jobId: string, image: { data: string; mime_type: string }) {
+export async function processImageInBackground(jobId: string, images: { data: string; mime_type: string }[]) {
   try {
-    console.log(`Starting background processing for job ${jobId}`);
+    console.log(`Starting background processing for job ${jobId} with ${images.length} images`);
 
     // Validate required environment variables
     if (!process.env.S3_BUCKET_NAME) {
@@ -72,23 +72,27 @@ export async function processImageInBackground(jobId: string, image: { data: str
 
     // Step 1: Analyze the dating profile with OpenAI Vision
     console.log('Step 1: Analyzing dating profile...');
+    
+    // Build content array with text prompt and all images
+    const content = [
+      {
+        type: "text" as const,
+        text: `Analyze these ${images.length} dating profile photos. Look at the person's style, interests, activities, settings, and overall vibe shown across all the images. Based on this comprehensive view of their personality and lifestyle, describe what type of person would be their ideal romantic match - their potential interests, lifestyle, personality traits, and what they might look like. Create a detailed description for generating an attractive, compatible partner.`
+      },
+      ...images.map(image => ({
+        type: "image_url" as const,
+        image_url: {
+          url: `data:${image.mime_type};base64,${image.data}`
+        }
+      }))
+    ];
+
     const analysisResponse = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "user",
-          content: [
-            {
-              type: "text",
-              text: "You are given a photo of a person. Generate an image of their ideal dating partner."
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${image.mime_type};base64,${image.data}`
-              }
-            }
-          ]
+          content: content
         }
       ],
       max_tokens: 500

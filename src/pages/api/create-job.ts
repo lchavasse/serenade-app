@@ -20,10 +20,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { image } = req.body;
+    const { images } = req.body;
     
-    if (!image || !image.data || !image.mime_type) {
-      return res.status(400).json({ error: 'Invalid image data' });
+    if (!images || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ error: 'At least one image is required' });
+    }
+
+    // Validate each image
+    for (const image of images) {
+      if (!image || !image.data || !image.mime_type) {
+        return res.status(400).json({ error: 'Invalid image data' });
+      }
     }
 
     // Generate unique job ID
@@ -38,10 +45,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // For local development, process directly
     // For production on Vercel, this could be moved to a background function
     if (process.env.NODE_ENV === 'development') {
-      console.log('Local development: Processing image directly...');
+      console.log('Local development: Processing images directly...');
       
       // Process in the background (don't await to avoid blocking)
-      processImageInBackground(jobId, image).catch((error: Error) => {
+      processImageInBackground(jobId, images).catch((error: Error) => {
         console.error('Background processing error:', error);
         
         // Update Redis with error status
@@ -65,7 +72,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         },
         body: JSON.stringify({
           jobId,
-          image
+          images
         })
       });
 

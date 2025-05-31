@@ -2,24 +2,35 @@
 
 import type React from "react"
 import { useState } from "react"
-import { ArrowRight, Plus, Loader } from "lucide-react"
+import { ArrowRight, Plus, Loader, X } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { useRouter } from "next/navigation"
 
 export default function SerenadeSplash() {
-  const [photo, setPhoto] = useState<File | null>(null)
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [photos, setPhotos] = useState<File[]>([])
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
   
   const { setScreenshot, setJobId, setStatus } = useStore()
   const router = useRouter()
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setPhoto(file)
-      setPhotoPreview(URL.createObjectURL(file))
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files)
+      const newPreviews = newFiles.map(file => URL.createObjectURL(file))
+      
+      setPhotos(prev => [...prev, ...newFiles])
+      setPhotoPreviews(prev => [...prev, ...newPreviews])
     }
+  }
+
+  const removePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index))
+    setPhotoPreviews(prev => {
+      // Clean up the URL object
+      URL.revokeObjectURL(prev[index])
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   const convertFileToBlob = (file: File): Promise<Blob> => {
@@ -43,18 +54,23 @@ export default function SerenadeSplash() {
   }
 
   const handleSubmit = async () => {
-    if (!photo) return
+    if (photos.length === 0) return
 
     setIsUploading(true)
     setStatus('pending')
 
     try {
-      // Convert file to blob and store in state
-      const blob = await convertFileToBlob(photo)
+      // Convert first file to blob and store in state (for backwards compatibility)
+      const blob = await convertFileToBlob(photos[0])
       setScreenshot(blob)
 
-      // Convert to base64 for API
-      const base64Data = await fileToBase64(photo)
+      // Convert all photos to base64 for API
+      const imagePromises = photos.map(async (photo) => ({
+        data: await fileToBase64(photo),
+        mime_type: photo.type
+      }))
+      
+      const images = await Promise.all(imagePromises)
 
       // Submit to API
       const response = await fetch('/api/create-job', {
@@ -63,10 +79,7 @@ export default function SerenadeSplash() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          image: {
-            data: base64Data,
-            mime_type: photo.type
-          }
+          images: images // Send array of images instead of single image
         })
       })
 
@@ -150,35 +163,62 @@ export default function SerenadeSplash() {
         </p>
 
         {/* Photo Upload Area */}
-        <div className="relative w-[200px] h-[200px] rounded-[16px] border-[3px] border-dashed border-white flex items-center justify-center backdrop-blur-sm">
-          {photoPreview ? (
-            <div className="relative w-full h-full">
-              <img
-                src={photoPreview || "/placeholder.svg"}
-                alt="Uploaded preview"
-                className="w-full h-full object-cover rounded-[14px]"
-              />
-              {!isUploading && (
-                <label htmlFor="photo-upload" className="absolute inset-0 cursor-pointer">
-                  <input id="photo-upload" type="file" accept="image/*" onChange={handlePhotoChange} className="sr-only" />
-                </label>
-              )}
+        <div className="w-full max-w-xs space-y-4">
+          {/* Photo Grid */}
+          {photoPreviews.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              {photoPreviews.map((preview, index) => (
+                <div key={index} className="relative aspect-square">
+                  <img
+                    src={preview}
+                    alt={`Uploaded photo ${index + 1}`}
+                    className="w-full h-full object-cover rounded-[12px] border-2 border-white/20"
+                  />
+                  {!isUploading && (
+                    <button
+                      onClick={() => removePhoto(index)}
+                      className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
-          ) : (
-            <label htmlFor="photo-upload" className="cursor-pointer w-full h-full flex items-center justify-center">
-              <Plus className="text-white w-12 h-12 drop-shadow-lg" />
-              <input id="photo-upload" type="file" accept="image/*" onChange={handlePhotoChange} className="sr-only" />
-            </label>
           )}
+
+          {/* Add Photos Button */}
+          <div className="relative">
+            <label 
+              htmlFor="photo-upload" 
+              className="flex items-center justify-center w-full h-[120px] rounded-[16px] border-[3px] border-dashed border-white cursor-pointer backdrop-blur-sm hover:bg-white/10 transition-colors"
+            >
+              <div className="flex flex-col items-center space-y-2">
+                <Plus className="text-white w-8 h-8 drop-shadow-lg" />
+                <span className="text-white text-sm drop-shadow-lg">
+                  {photoPreviews.length === 0 ? 'Add Photos' : `Add More (${photoPreviews.length})`}
+                </span>
+              </div>
+              <input 
+                id="photo-upload" 
+                type="file" 
+                accept="image/*" 
+                multiple
+                onChange={handlePhotoChange} 
+                className="sr-only" 
+                disabled={isUploading}
+              />
+            </label>
+          </div>
         </div>
 
         {/* Submit Button or Status */}
-        {photo && !isUploading && (
+        {photos.length > 0 && !isUploading && (
           <button
             onClick={handleSubmit}
             className="flex items-center justify-center space-x-2 bg-gradient-to-r from-[#FF1493] to-[#00FFFF] text-white px-8 py-3 rounded-full font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
           >
-            <span>Generate Match</span>
+            <span>Generate Match {photos.length > 1 ? `(${photos.length} photos)` : ''}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         )}
@@ -186,14 +226,14 @@ export default function SerenadeSplash() {
         {isUploading && (
           <div className="flex items-center space-x-2 text-white">
             <Loader className="w-5 h-5 animate-spin" />
-            <span>Creating your perfect match...</span>
+            <span>Analyzing {photos.length} photo{photos.length > 1 ? 's' : ''} and creating your perfect match...</span>
           </div>
         )}
 
         {/* Caption */}
-        {!photo && (
+        {!photos.length && (
           <div className="flex items-center text-white text-sm drop-shadow-lg">
-            <span>upload photo to get started</span>
+            <span>upload photos to get started</span>
             <ArrowRight className="ml-2 w-4 h-4" />
           </div>
         )}
