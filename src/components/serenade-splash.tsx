@@ -174,7 +174,7 @@ export default function SerenadeSplash() {
       
       const images = await Promise.all(imagePromises)
 
-      // Submit to API with settings
+      // Submit to API with new discriminated union format
       const response = await fetch('/api/create-job', {
         method: 'POST',
         headers: {
@@ -182,10 +182,7 @@ export default function SerenadeSplash() {
         },
         body: JSON.stringify({
           images: images,
-          settings: {
-            ratingLevel,
-            outputType
-          }
+          jobType: outputType
         })
       })
 
@@ -193,8 +190,14 @@ export default function SerenadeSplash() {
         throw new Error('Failed to create job')
       }
 
-      const { jobId } = await response.json()
-      setJobId(jobId)
+      const result = await response.json()
+      
+      // Handle the new discriminated union response format
+      if (result.jobId && result.type) {
+        setJobId(result.jobId)
+      } else {
+        throw new Error('Invalid response format')
+      }
 
       // Navigate to result page
       router.push('/result')

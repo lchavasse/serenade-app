@@ -1,9 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
 import redis from '@/lib/redis';
+import { JobData } from './create-job';
 
 // Configure runtime for background function
 export const config = {
@@ -21,19 +19,6 @@ const openai = new OpenAI({
   },
 });
 
-// Keep separate OpenAI client for DALL-E image generation
-const openaiDalle = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'eu-west-2',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -46,48 +31,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // Respond immediately to avoid timeout
-  res.status(200).json({ message: 'Background processing started' });
+  res.status(200).json({ message: 'Song generation started' });
 
   // Process in background
   try {
-    await processImageInBackground(jobId, images);
+    await generateSong(jobId, images);
   } catch (error) {
-    console.error('Background processing error:', error);
-    
-    // Update Redis with error status
-    await redis.set(
-      `job:${jobId}`, 
-      JSON.stringify({ 
-        status: 'error', 
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }), 
-      { ex: 86400 }
-    );
+    console.error('Song generation error:', error);
+    await updateJobWithError(jobId, error instanceof Error ? error.message : 'Unknown error');
   }
 }
 
-export async function processImageInBackground(jobId: string, images: { data: string; mime_type: string }[]) {
+// Main song generation function
+export async function generateSong(jobId: string, images: { data: string; mime_type: string }[]) {
   try {
-    console.log(`Starting background processing for job ${jobId} with ${images.length} images`);
+    console.log(`Starting song generation for job ${jobId} with ${images.length} images`);
 
-    // Validate required environment variables
-    if (!process.env.S3_BUCKET_NAME) {
-      throw new Error('S3_BUCKET_NAME environment variable is required');
-    }
-    if (!process.env.AWS_ACCESS_KEY_ID) {
-      throw new Error('AWS_ACCESS_KEY_ID environment variable is required');
-    }
-    if (!process.env.AWS_SECRET_ACCESS_KEY) {
-      throw new Error('AWS_SECRET_ACCESS_KEY environment variable is required');
-    }
-    if (!process.env.OPENROUTER_API_KEY) {
-      throw new Error('OPENROUTER_API_KEY environment variable is required');
-    }
+    // Update job status to processing
+    await createJobWithPendingStatus(jobId);
 
     // Step 1: Analyze the dating profile with OpenRouter
     console.log('Step 1: Analyzing dating profile...');
     
-    // Create a detailed prompt for the LLM analysis
     const analysisPrompt = `
     Extract information from images of dating-profile and output a JSON object that follows the given schema. Provide your judgment about the profile content for fields except "hooks_quotes," which should contain exact quotes. Focus on both the text content and the visuals and photos in the profile to make judgements about the user's personality humour, interests lifestyle, fashion aesthetic, music culture, relationship emotion and visual cues.
 
@@ -109,7 +74,6 @@ SCHEMA:
 - Fill fields with judgments based on the profile, except for "hooks_quotes," which should include exact quotes from the profile.
     `;
 
-    // Build content array with text prompt and all images
     const content = [
       {
         type: "text" as const,
@@ -135,68 +99,200 @@ SCHEMA:
     });
 
     const analysis = analysisResponse.choices[0].message.content;
-    console.log('Analysis completed:', JSON.stringify(analysis, null, 2));
+    console.log('Analysis completed');
 
-    // Step 2: Generate image of ideal match using DALL-E
-    console.log('Step 2: Generating ideal match image...');
-    const dalleResponse = await openaiDalle.images.generate({
-      model: "dall-e-3",
-      prompt: `Create a high-quality, realistic portrait photo of a person who would be the ideal romantic match based on this analysis: ${analysis}. The image should look like a professional dating profile photo - warm, inviting, and attractive. Focus on creating someone who would genuinely complement the person described.`,
-      size: "1024x1024",
-      quality: "standard",
-      n: 1,
+    // Update job with analysis
+    await updateJobWithAnalysis(jobId, analysis || '');
+
+    // Step 2: Generate song lyrics using make-song endpoint
+    console.log('Step 2: Generating song lyrics using make-song endpoint...');
+    
+    // Create a placeholder user profile for the make-song endpoint
+    const placeholderUserProfile = JSON.stringify({
+      "basic": {
+        "name": "Alex",
+        "age": 27,
+        "gender": "non-binary",
+        "height": "5'8\"",
+        "location": "San Francisco, CA",
+        "preferred_relationship_type": "serious",
+        "kind_of_dating": "monogamous",
+        "sexual_oreintation": "pansexual"
+      },
+      "personality_humour": "Witty and playful, loves wordplay and spontaneous adventures",
+      "interests_lifestyle": "Coffee enthusiast, hiking, indie music, bookstores, cooking",
+      "fashion_aesthetic": "Casual chic, vintage band tees, sustainable fashion",
+      "music_culture": "Indie rock, folk, electronic, attends local concerts",
+      "relationship_emotion": "Looking for deep connection and shared experiences",
+      "visual_cues": "Always has coffee in hand, loves cozy spaces and natural light",
+      "hooks_quotes": ["Life's too short for bad coffee", "Adventure awaits", "Let's explore together"]
     });
 
-    if (!dalleResponse.data || !dalleResponse.data[0]?.url) {
-      throw new Error('Failed to generate image with DALL-E');
+    const makeSongResponse = await fetch(`${process.env.YOUR_SITE_URL || 'http://localhost:3000'}/api/make-song`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_profile: placeholderUserProfile,
+        match_profile: analysis || "{}"
+      }),
+    });
+
+    if (!makeSongResponse.ok) {
+      throw new Error(`Make-song API request failed: ${makeSongResponse.status} ${makeSongResponse.statusText}`);
     }
 
-    const generatedImageUrl = dalleResponse.data[0].url;
-    console.log('Image generated successfully');
+    const lyricsData = await makeSongResponse.json();
+    console.log('Lyrics generated successfully');
 
-    // Step 3: Download the generated image
-    console.log('Step 3: Downloading generated image...');
-    const imageResponse = await fetch(generatedImageUrl);
-    const generatedImageBuffer = await imageResponse.arrayBuffer();
+    // Update job with lyrics and style
+    await updateJobWithLyrics(jobId, lyricsData.lyrics || '');
+    await updateJobWithStyle(jobId, lyricsData.style_prompt || 'pop ballad');
 
-    // Step 4: Upload to S3
-    console.log('Step 4: Uploading to S3...');
-    const s3Key = `images/${jobId}.png`;
-    const putCommand = new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME!,
-      Key: s3Key,
-      Body: Buffer.from(generatedImageBuffer),
-      ContentType: 'image/png',
+    // Step 3: Generate song using make-noise endpoint
+    console.log('Step 3: Generating song using make-noise endpoint...');
+    
+    const makeNoiseResponse = await fetch(`${process.env.YOUR_SITE_URL || 'http://localhost:3000'}/api/make-noise`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        lyrics: lyricsData.lyrics || "",
+        style: lyricsData.style_prompt || "pop ballad"
+      }),
     });
 
-    await s3Client.send(putCommand);
-    console.log('S3 upload completed');
+    if (!makeNoiseResponse.ok) {
+      throw new Error(`Make-noise API request failed: ${makeNoiseResponse.status} ${makeNoiseResponse.statusText}`);
+    }
 
-    // Step 5: Generate signed URL for sharing
-    console.log('Step 5: Generating signed URL...');
-    const getCommand = new GetObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME!,
-      Key: s3Key,
-    });
+    const songGenerationData = await makeNoiseResponse.json();
+    
+    if (!songGenerationData.data?.taskId) {
+      throw new Error('No task ID returned from make-noise endpoint');
+    }
 
-    const signedUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 604800 }); // 7 days
+    console.log(`Suno task created with ID: ${songGenerationData.data.taskId}`);
 
-    // Step 6: Update Redis with completion status
-    console.log('Step 6: Updating Redis with completion status...');
-    await redis.set(
-      `job:${jobId}`, 
-      JSON.stringify({ 
-        status: 'done', 
-        imageUrl: signedUrl,
-        analysis: analysis 
-      }), 
-      { ex: 86400 }
-    );
+    // Update job with Suno task ID
+    await updateJobWithSunoTask(jobId, songGenerationData.data.taskId);
 
-    console.log(`Background processing completed successfully for job ${jobId}`);
+    // Store the mapping for the callback
+    await redis.set(`suno:${songGenerationData.data.taskId}`, jobId, { ex: 86400 });
+
+    console.log(`Song generation process completed for job ${jobId}`);
 
   } catch (error) {
-    console.error('Error in background processing:', error);
+    console.error('Error in song generation:', error);
     throw error; // Re-throw to be handled by caller
+  }
+}
+
+async function createJobWithPendingStatus(jobId: string) {
+  await redis.set(`job:${jobId}`, JSON.stringify({
+    status: 'pending',
+    type: 'song',
+    createdAt: new Date().toISOString()
+  }), { ex: 86400 });
+}
+
+// Helper functions to update job status
+async function updateJobStatus(jobId: string, status: 'pending' | 'processing' | 'completed' | 'error') {
+  const currentJobData = await redis.get(`job:${jobId}`);
+  if (!currentJobData) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+  
+  const jobData = currentJobData as JobData & { type: 'song' };
+  const updatedJobData: JobData = {
+    ...jobData,
+    status,
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
+}
+
+async function updateJobWithAnalysis(jobId: string, analysis: string) {
+  const currentJobData = await redis.get(`job:${jobId}`);
+  if (!currentJobData) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+  
+  const jobData = currentJobData as JobData & { type: 'song' };
+  const updatedJobData: JobData = {
+    ...jobData,
+    analysis,
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
+}
+
+async function updateJobWithLyrics(jobId: string, lyrics: string) {
+  const currentJobData = await redis.get(`job:${jobId}`);
+  if (!currentJobData) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+  
+  const jobData = currentJobData as JobData & { type: 'song' };
+  const updatedJobData: JobData = {
+    ...jobData,
+    lyrics,
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
+}
+
+async function updateJobWithStyle(jobId: string, style: string) {
+  const currentJobData = await redis.get(`job:${jobId}`);
+  if (!currentJobData) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+  
+  const jobData = currentJobData as JobData & { type: 'song' };
+  const updatedJobData: JobData = {
+    ...jobData,
+    style,
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
+}
+
+async function updateJobWithSunoTask(jobId: string, sunoTaskId: string) {
+  const currentJobData = await redis.get(`job:${jobId}`);
+  if (!currentJobData) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+  
+  const jobData = currentJobData as JobData & { type: 'song' };
+  const updatedJobData: JobData = {
+    ...jobData,
+    sunoTaskId,
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
+}
+
+async function updateJobWithError(jobId: string, errorMessage: string) {
+  try {
+    const currentJobData = await redis.get(`job:${jobId}`);
+    if (currentJobData) {
+      const jobData = currentJobData as JobData;
+      const errorJobData: JobData = {
+        ...jobData,
+        status: 'error',
+        error: errorMessage,
+        updatedAt: new Date().toISOString(),
+      };
+      await redis.set(`job:${jobId}`, JSON.stringify(errorJobData), { ex: 86400 });
+    }
+  } catch (error) {
+    console.error('Error updating job with error:', error);
   }
 }

@@ -112,10 +112,14 @@ Write a chorus.
 
 Add one production note. One sentence naming tempo, vibe/genre, and any key sonic elements (e.g., “bright synth stabs over four-on-the-floor kick”).
 
-OUTPUT — valid JSON only
+OUTPUT — SCHEMA VALID JSON ONLY
+
+lyrics: line1\\nline2
+style_prompt: "..."
+"reasoning": "..."
 
 {
-  "lyrics": "line1\nline2\n…",
+  "lyrics": "",
   "style_prompt": "...",
   "reasoning": "..."
 }
