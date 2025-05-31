@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import Image from 'next/image';
 
 interface JobStatus {
   status: 'pending' | 'processing' | 'completed' | 'error';
@@ -18,7 +19,6 @@ export default function TestVideoPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('dancing energetically at a party with colorful lights');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -82,7 +82,6 @@ export default function TestVideoPage() {
     }
 
     setIsGenerating(true);
-    setJobId(null);
     setJobStatus(null);
     setLogs([]);
 
@@ -111,7 +110,6 @@ export default function TestVideoPage() {
           }
 
           const { jobId: newJobId } = await response.json();
-          setJobId(newJobId);
           addLog(`✅ Job submitted! ID: ${newJobId}`);
           
           // Start polling
@@ -175,10 +173,12 @@ export default function TestVideoPage() {
               >
                 {imagePreview ? (
                   <div className="space-y-4">
-                    <img 
+                    <Image 
                       src={imagePreview} 
                       alt="Preview" 
-                      className="max-w-xs max-h-64 mx-auto rounded-lg shadow-lg"
+                      width={300}
+                      height={256}
+                      className="max-w-xs max-h-64 mx-auto rounded-lg shadow-lg object-cover"
                     />
                     <p className="text-cyan-200">Click to change image</p>
                   </div>

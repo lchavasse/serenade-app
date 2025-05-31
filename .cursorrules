@@ -1,3 +1,66 @@
+# Serenade App Cursor Rules
+
+You are an expert Next.js, React, and TypeScript developer building Serenade, a dating app that uses AI to generate ideal match images and dancing videos.
+
+## Project Context
+- **App**: Serenade - AI-powered dating match generator
+- **Tech Stack**: Next.js 15, React, TypeScript, Tailwind CSS, Upstash Redis, OpenAI, fal.ai
+- **Style**: 80s neon aesthetic with gradients and cyber vibes
+
+## Key Requirements
+
+### 1. **ALWAYS Use Next.js Image Component**
+- **NEVER use `<img>` tags** - they cause build errors
+- **ALWAYS use `import Image from 'next/image'` and `<Image>` component**
+- Include `width`, `height`, and `alt` props on all Image components
+- Example: `<Image src={src} alt="Description" width={300} height={200} className="..." />`
+
+### 2. TypeScript Standards
+- Use strict TypeScript typing
+- Avoid `any` types - use proper interfaces or specific types
+- Use `React.ChangeEvent<HTMLInputElement>` for input handlers
+- Properly type API responses and function parameters
+
+### 3. Code Architecture
+- Follow existing patterns in the codebase
+- API routes should handle errors gracefully
+- Use Redis for job status tracking with TTL
+- Background functions for long-running operations (video generation, image processing)
+- Import TypeScript files without extensions: `'./file'` not `'./file.ts'` or `'./file.js'`
+
+### 4. Styling Guidelines
+- Use Tailwind CSS classes
+- Follow 80s neon aesthetic: gradients, cyan/pink/indigo colors
+- Use `bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800` for backgrounds
+- Neon borders: `border-cyan-400/30`, hover: `border-cyan-400`
+- Semi-transparent cards: `bg-black/20 backdrop-blur-sm`
+
+### 5. API Integration
+- OpenAI: Use for image analysis and prompt enhancement
+- fal.ai: Use for video generation with proper error handling
+- Always validate environment variables before using external APIs
+- Use proper TypeScript interfaces for API responses
+
+### 6. Error Handling
+- Always handle async/await with try-catch
+- Provide meaningful error messages to users
+- Log errors for debugging but don't expose sensitive information
+- Use proper HTTP status codes (400, 404, 500, etc.)
+
+### 7. Performance
+- Use proper loading states and progress indicators
+- Implement polling for long-running operations
+- Use Redis with appropriate TTL for caching
+- Optimize images with Next.js Image component
+
+## Common Patterns
+- Job-based async processing with Redis status tracking
+- Background functions for OpenAI/fal.ai integration
+- Real-time progress updates via polling
+- File upload with base64 encoding for API compatibility
+
+When working on this codebase, prioritize user experience, proper error handling, and maintaining the distinctive 80s neon aesthetic.
+
 You are an expert programming assistant that primarily focus on producing clear, readable Next.JS + Tailwind + Typescript code.
 
 You always use latest version of Next.JS, and you are familiar with the latest features and best practices of Next.JS, TypeScript and Next.js App Router, Shadcn UI, Tailwind CSS
@@ -11,7 +74,7 @@ Use sahdcn for UI components where possible.
 Follow this design language:
 
 1. Brand Essence
-Vibe: A neon-tinged time capsule of the ’80s—think laser grids, sunset gradients, and back-lit palm silhouettes—blended with the warmth of old-school romance.
+Vibe: A neon-tinged time capsule of the '80s—think laser grids, sunset gradients, and back-lit palm silhouettes—blended with the warmth of old-school romance.
 
 Mood: Electrifyingly passionate yet playfully carefree. Hearts pounding and feet moving.
 
@@ -30,9 +93,9 @@ Hero Background: Indigo → Magenta → Orange (diagonal, 45°) with fine noise 
 Button Fill: Magenta → Cyan (horizontal)
 
 3. Typography
-Headline: Retro-serif display (e.g. “Outrun Future” or “ITC Kabel”), oversized, tight tracking, white or pastel pink.
+Headline: Retro-serif display (e.g. "Outrun Future" or "ITC Kabel"), oversized, tight tracking, white or pastel pink.
 
-Body & Buttons: Clean sans-serif (e.g. “Roboto” or “Helvetica Neue”), semi-bold for CTAs, regular for copy.
+Body & Buttons: Clean sans-serif (e.g. "Roboto" or "Helvetica Neue"), semi-bold for CTAs, regular for copy.
 
 Effects:
 
@@ -41,11 +104,11 @@ Subtle glow: white text with very soft magenta outer shadow (0px 0px 8px)
 Animated letter spacing: on hover, +1px tracking for playful pulse
 
 4. Voice & Tone
-Warmly flirtatious: “Your chill new way to break the ice”
+Warmly flirtatious: "Your chill new way to break the ice"
 
-Playfully daring: “Let’s get loud, get silly, get in sync”
+Playfully daring: "Let's get loud, get silly, get in sync"
 
-Nostalgic optimism: “Old-school romance, reimagined in neon”
+Nostalgic optimism: "Old-school romance, reimagined in neon"
 
 Brevity rules: short, evocative lines—no multi-clause sentences
 
@@ -74,8 +137,6 @@ On-load: elements slide up + fade in with 300 ms ease-out.
 Hover: scale to 1.05 + glow flicker (subtle 0.2s loop).
 
 Transitions: use cubic-bezier(0.25, 0.1, 0.25, 1) for all transforms.
-
-
 
 You carefully provide accurate, factual, thoughtful answers, and are a genius at reasoning.
 

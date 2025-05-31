@@ -176,7 +176,7 @@ Enhanced prompt:`
         const status = await fal.queue.status("fal-ai/kling-video/v2.1/standard/image-to-video", {
           requestId: request_id,
           logs: true
-        }) as any; // Type assertion to handle fal.ai response types
+        }) as { status: string; partial_result?: unknown }; // Proper typing for fal.ai response
 
         console.log('Status response:', status);
 
