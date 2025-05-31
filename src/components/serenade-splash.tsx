@@ -213,10 +213,35 @@ export default function SerenadeSplash() {
           throw new Error('User profile photo is required for video generation')
         }
         
-        const userImage = {
-          data: await fileToBase64(userProfile.photoBlob as File),
-          mime_type: userProfile.photoBlob.type
+        // Additional validation for mobile compatibility
+        const photoFile = userProfile.photoBlob as File
+        if (!photoFile || typeof photoFile.type !== 'string') {
+          throw new Error('Invalid user profile photo format')
         }
+        
+        console.log('Converting user photo for video generation...', {
+          fileName: photoFile.name || 'unknown',
+          fileType: photoFile.type,
+          fileSize: photoFile.size
+        })
+        
+        let userImageData: string
+        try {
+          userImageData = await fileToBase64(photoFile)
+        } catch (error) {
+          console.error('Failed to convert user photo to base64:', error)
+          throw new Error('Failed to process user profile photo')
+        }
+        
+        const userImage = {
+          data: userImageData,
+          mime_type: photoFile.type
+        }
+        
+        console.log('Making video generation API call...', {
+          matchImagesCount: matchImages.length,
+          userImageType: userImage.mime_type
+        })
         
         const response = await fetch('/api/create-job', {
           method: 'POST',
@@ -232,24 +257,38 @@ export default function SerenadeSplash() {
 
         if (!response.ok) {
           const errorText = await response.text()
+          console.error('Video generation API error:', { status: response.status, errorText })
           throw new Error(`Failed to create video jobs: ${response.status} ${errorText}`)
         }
 
         const result = await response.json()
+        console.log('Video generation API response:', result)
         
         if (result.songJobId && result.videoJobId && result.type === 'video') {
           setSongJob(result.songJobId, 'pending')
           setVideoJob(result.videoJobId, 'pending')
+          console.log('Video jobs created successfully, navigating to results...')
         } else {
+          console.error('Invalid video job response:', result)
           throw new Error('Invalid video job response - missing songJobId or videoJobId')
         }
       }
 
       // Navigate to result page
+      console.log('Navigating to results page...')
       router.push('/result')
 
     } catch (error) {
       console.error('Upload error:', error)
+      console.error('Error details:', {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        outputType,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+        userProfilePhotoExists: !!userProfile.photoBlob,
+        userProfilePhotoType: userProfile.photoBlob ? userProfile.photoBlob.type : 'none',
+        matchPhotosCount: matchPhotos.length
+      })
       updateSongStatus('error')
       updateVideoStatus('error')
     } finally {
