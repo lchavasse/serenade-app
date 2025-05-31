@@ -12,8 +12,11 @@ export const config = {
   },
 }
 
-// Job types for discriminated union
-export type JobType = 'song' | 'video';
+// Generation types for what type of content to generate
+export type GenerationType = 'song' | 'video';
+
+// Job types for discriminated union (individual jobs)
+export type JobType = 'song' | 'video' | 'lipsync';
 
 // Base job interface
 interface BaseJobData {
@@ -40,6 +43,13 @@ export type JobData =
       videoUrl?: string;
       enhancedPrompt?: string;
       falRequestId?: string;
+    })
+  | (BaseJobData & {
+      type: 'lipsync';
+      videoUrl?: string;
+      originalVideoUrl?: string;
+      audioUrl?: string;
+      falRequestId?: string;
     });
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -48,80 +58,121 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { images, jobType } = req.body;
+    const { images, matchImages, userImage, generationType } = req.body;
     
-    if (!images || !Array.isArray(images) || images.length === 0) {
-      return res.status(400).json({ error: 'At least one image is required' });
+    if (!generationType || !['song', 'video'].includes(generationType)) {
+      return res.status(400).json({ error: 'generationType must be either "song" or "video"' });
     }
-
-    if (!jobType || !['song', 'video'].includes(jobType)) {
-      return res.status(400).json({ error: 'jobType must be either "song" or "video"' });
+    
+    // For song-only generation, use images (legacy format)
+    // For video generation, use matchImages and userImage (new format)
+    let songImages: { data: string; mime_type: string }[];
+    let videoImages: { data: string; mime_type: string }[] = [];
+    
+    if (generationType === 'song') {
+      if (!images || !Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ error: 'At least one image is required' });
+      }
+      songImages = images;
+    } else { // generationType === 'video'
+      if (!matchImages || !Array.isArray(matchImages) || matchImages.length === 0) {
+        return res.status(400).json({ error: 'At least one match image is required for video generation' });
+      }
+      if (!userImage || !userImage.data || !userImage.mime_type) {
+        return res.status(400).json({ error: 'User image is required for video generation' });
+      }
+      songImages = matchImages; // Use match images for song analysis
+      videoImages = [userImage]; // Use user image for video generation
     }
 
     // Validate each image
-    for (const image of images) {
+    const allImages = generationType === 'song' ? songImages : [...songImages, ...videoImages];
+    for (const image of allImages) {
       if (!image || !image.data || !image.mime_type) {
         return res.status(400).json({ error: 'Invalid image data' });
       }
     }
 
     const now = new Date().toISOString();
-    const jobId = uuidv4();
 
-    // Create job based on discriminated union
-    let jobData: JobData;
-    
-    if (jobType === 'song' || jobType === 'video') {
-      jobData = {
-        jobId,
+    if (generationType === 'song') {
+      // Create song job only
+      const songJobId = uuidv4();
+      
+      const songJobData: JobData = {
+        jobId: songJobId,
         type: 'song',
         status: 'pending',
         createdAt: now,
         updatedAt: now,
       };
       
+      // Store song job in Redis
+      await redis.set(`job:${songJobId}`, JSON.stringify(songJobData), { ex: 86400 });
+      
       // Start song generation in background
       waitUntil(
-        processSongInBackground(jobId, images).catch((error: Error) => {
+        processSongInBackground(songJobId, songImages).catch((error: Error) => {
           console.error('Song processing error:', error);
-          updateJobWithError(jobId, error.message);
+          updateJobWithError(songJobId, error.message);
         })
       );
       
-    } else {
-      return res.status(400).json({ error: 'Invalid job type' });
-    }
-    
-    if (jobType === 'video') {
-      const additionalJobId = uuidv4();
-      console.log(`Additional job ID: ${additionalJobId}`);
-      jobData = {
-        jobId: additionalJobId,
+      // Respond with song job only
+      res.status(202).json({ 
+        songJobId,
+        type: 'song',
+        message: 'Song generation started'
+      });
+      
+    } else if (generationType === 'video') {
+      // Create both song and video jobs
+      const songJobId = uuidv4();
+      const videoJobId = uuidv4();
+      
+      const songJobData: JobData = {
+        jobId: songJobId,
+        type: 'song',
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+      };
+      
+      const videoJobData: JobData = {
+        jobId: videoJobId,
         type: 'video', 
         status: 'pending',
         createdAt: now,
         updatedAt: now,
       };
       
-      // Start video generation in background
+      // Store both jobs in Redis
+      await redis.set(`job:${songJobId}`, JSON.stringify(songJobData), { ex: 86400 });
+      await redis.set(`job:${videoJobId}`, JSON.stringify(videoJobData), { ex: 86400 });
+      
+      // Start both jobs in background
       waitUntil(
-        processVideoInBackground(jobId, images).catch((error: Error) => {
-          console.error('Video processing error:', error);
-          updateJobWithError(jobId, error.message);
+        processSongInBackground(songJobId, songImages).catch((error: Error) => {
+          console.error('Song processing error:', error);
+          updateJobWithError(songJobId, error.message);
         })
       );
       
+      waitUntil(
+        processVideoInBackground(videoJobId, videoImages).catch((error: Error) => {
+          console.error('Video processing error:', error);
+          updateJobWithError(videoJobId, error.message);
+        })
+      );
+      
+      // Respond with both job IDs
+      res.status(202).json({ 
+        songJobId,
+        videoJobId,
+        type: 'video',
+        message: 'Song and video generation started'
+      });
     }
-
-    // Store job in Redis
-    await redis.set(`job:${jobId}`, JSON.stringify(jobData), { ex: 86400 });
-
-    // Respond immediately with job ID and type
-    res.status(202).json({ 
-      jobId,
-      type: jobType,
-      message: `${jobType} generation started`
-    });
 
   } catch (error) {
     console.error('Error creating job:', error);
@@ -162,7 +213,7 @@ async function processSongInBackground(jobId: string, images: { data: string; mi
 // Video processing function  
 async function processVideoInBackground(jobId: string, images: { data: string; mime_type: string }[]) {
   // Call the existing video generation endpoint directly
-  const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/generate-dancing-video`, {
+  const response = await fetch(`${process.env.YOUR_SITE_URL || 'http://localhost:3000'}/api/generate-dancing-video`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

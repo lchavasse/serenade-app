@@ -54,7 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     // Create a detailed prompt for song generation
     const songPrompt = `
-    You are “LyricSmith,” a specialist in writing short-form, hook-heavy choruses for social-video platforms.
+    You are "LyricSmith," a specialist in writing short-form, hook-heavy choruses for social-video platforms.
 
 ## INPUT (from the user role)  
 
@@ -108,9 +108,9 @@ VERY IMPORTANT to mention the match's name in the first few lyrics so that they 
 Write a chorus.
 • 6–8 short lines (so it sings naturally for 15–30 s at ≈100 BPM).
 • Keep tight rhyme or internal assonance; no verses, no bridge, no emojis.
-• Do not invent facts—reuse phrases from the profiles when helpful (e.g. “espresso martini”).
+• Do not invent facts—reuse phrases from the profiles when helpful (e.g. "espresso martini").
 
-Add one production note. One sentence naming tempo, vibe/genre, and any key sonic elements (e.g., “bright synth stabs over four-on-the-floor kick”).
+Add one production note. One sentence naming tempo, vibe/genre, and any key sonic elements (e.g., "bright synth stabs over four-on-the-floor kick").
 
 OUTPUT — SCHEMA VALID JSON ONLY
 
@@ -167,9 +167,9 @@ No emojis, no line numbers, no markdown formatting.`;
     generatedContent = generatedContent.replaceAll('```json', '');
 
     let songData;
-    try {;
+    try {
       songData = JSON.parse(generatedContent) as SongResponse;
-    } catch (parseError) {
+    } catch {
       console.error('Failed to parse JSON response:', generatedContent);
       throw new Error('Invalid JSON response from AI model');
     }
@@ -189,8 +189,6 @@ No emojis, no line numbers, no markdown formatting.`;
 
   } catch (error) {
     console.error('Error generating song:', error);
-    
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     
     return res.status(500).json({
       lyrics: '',

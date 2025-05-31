@@ -199,22 +199,6 @@ async function createJobWithPendingStatus(jobId: string) {
 }
 
 // Helper functions to update job status
-async function updateJobStatus(jobId: string, status: 'pending' | 'processing' | 'completed' | 'error') {
-  const currentJobData = await redis.get(`job:${jobId}`);
-  if (!currentJobData) {
-    throw new Error(`Job ${jobId} not found`);
-  }
-  
-  const jobData = currentJobData as JobData & { type: 'song' };
-  const updatedJobData: JobData = {
-    ...jobData,
-    status,
-    updatedAt: new Date().toISOString(),
-  };
-  
-  await redis.set(`job:${jobId}`, JSON.stringify(updatedJobData), { ex: 86400 });
-}
-
 async function updateJobWithAnalysis(jobId: string, analysis: string) {
   const currentJobData = await redis.get(`job:${jobId}`);
   if (!currentJobData) {

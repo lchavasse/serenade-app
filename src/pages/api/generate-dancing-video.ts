@@ -3,6 +3,7 @@ import redis from '@/lib/redis';
 import { waitUntil } from '@vercel/functions';
 import { fal } from "@fal-ai/client";
 import { JobData } from './create-job';
+import { v4 as uuidv4 } from 'uuid';
 
 // Import the background processing function
 import { processDancingVideoInBackground } from './generate-dancing-video.background';
@@ -37,7 +38,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     
     let finalJobId: string;
     let finalImageUrl: string;
-    let finalPrompt: string;
     
     if (jobId && images) {
       // Job system format
@@ -51,7 +51,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       finalJobId = jobId;
-      finalPrompt = "Create an engaging dancing video with smooth movements and good lighting";
       
       // Convert base64 image to fal.ai storage URL
       try {
@@ -73,9 +72,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       
     } else if (imageData && prompt) {
       // Direct format for testing
-      const { v4: uuidv4 } = require('uuid');
       finalJobId = uuidv4();
-      finalPrompt = prompt;
       
       try {
         console.log('Processing direct image data...');
@@ -121,7 +118,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Use waitUntil to process in background without blocking the response
     waitUntil(
-      processDancingVideoInBackground(finalJobId, finalImageUrl, finalPrompt).catch((error: Error) => {
+      processDancingVideoInBackground(finalJobId, finalImageUrl).catch((error: Error) => {
         console.error('Background video processing error:', error);
         updateJobWithError(finalJobId, error instanceof Error ? error.message : 'Unknown error');
       })

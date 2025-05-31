@@ -5,6 +5,7 @@ import { waitUntil } from '@vercel/functions';
 import { fal } from "@fal-ai/client";
 import fs from 'fs';
 import path from 'path';
+import { JobData } from './create-job';
 
 // Import the background processing function
 import { processLipsyncVideoInBackground } from './generate-lipsync-video.background';
@@ -90,12 +91,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Generate unique job ID
     const jobId = uuidv4();
 
-    // Set initial status in Redis
-    await redis.set(`job:${jobId}`, JSON.stringify({ 
+    // Create job with proper JobData schema
+    const now = new Date().toISOString();
+    const jobData: JobData = {
+      jobId,
+      type: 'lipsync',
       status: 'pending',
-      type: 'lipsync-video',
-      createdAt: new Date().toISOString()
-    }), { ex: 86400 });
+      createdAt: now,
+      updatedAt: now,
+      audioUrl: finalAudioUrl
+    };
+
+    // Set initial status in Redis
+    await redis.set(`job:${jobId}`, JSON.stringify(jobData), { ex: 86400 });
 
     // Respond immediately with job ID
     res.status(202).json({ jobId });
@@ -105,17 +113,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       processLipsyncVideoInBackground(jobId, videoUrl, finalAudioUrl).catch((error: Error) => {
         console.error('Background lipsync processing error:', error);
         
-        // Update Redis with error status
-        redis.set(
-          `job:${jobId}`, 
-          JSON.stringify({ 
-            status: 'error', 
-            type: 'lipsync-video',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            updatedAt: new Date().toISOString()
-          }), 
-          { ex: 86400 }
-        );
+        // Update Redis with error status using proper schema
+        updateJobWithError(jobId, error instanceof Error ? error.message : 'Unknown error');
       })
     );
 
@@ -126,5 +125,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!res.headersSent) {
       res.status(500).json({ error: 'Internal server error' });
     }
+  }
+}
+
+// Helper function to update job with error
+async function updateJobWithError(jobId: string, errorMessage: string) {
+  try {
+    const currentJobData = await redis.get(`job:${jobId}`);
+    if (currentJobData) {
+      const jobData = currentJobData as JobData & { type: 'lipsync' };
+      const errorJobData: JobData = {
+        ...jobData,
+        status: 'error',
+        error: errorMessage,
+        updatedAt: new Date().toISOString(),
+      };
+      await redis.set(`job:${jobId}`, JSON.stringify(errorJobData), { ex: 86400 });
+    }
+  } catch (error) {
+    console.error('Error updating job with error:', error);
   }
 } 

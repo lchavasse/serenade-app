@@ -3,8 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { useStore } from "@/lib/store"
 import { useRouter } from "next/navigation"
-import { Download, Share, RefreshCw, Heart, Music, Video } from "lucide-react"
-import Image from "next/image"
+import { Download, Share, RefreshCw, Heart } from "lucide-react"
 
 export default function ResultPage() {
   const { 

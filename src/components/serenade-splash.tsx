@@ -167,17 +167,16 @@ export default function SerenadeSplash() {
       const blob = await convertFileToBlob(matchPhotos[0])
       setScreenshot(blob)
 
-      // Convert all photos to base64 for API
-      const imagePromises = matchPhotos.map(async (photo) => ({
+      // Convert match photos to base64 for song analysis
+      const matchImagePromises = matchPhotos.map(async (photo) => ({
         data: await fileToBase64(photo),
         mime_type: photo.type
       }))
-      
-      const images = await Promise.all(imagePromises)
+      const matchImages = await Promise.all(matchImagePromises)
 
       // Create jobs based on output type selection
       if (outputType === 'song') {
-        // Create song job only
+        // Create song job only - use match photos
         updateSongStatus('pending')
         
         const response = await fetch('/api/create-job', {
@@ -186,8 +185,8 @@ export default function SerenadeSplash() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            images: images,
-            jobType: 'song'
+            images: matchImages, // Match photos for song analysis
+            generationType: 'song'
           })
         })
         
@@ -198,15 +197,26 @@ export default function SerenadeSplash() {
 
         const result = await response.json()
         
-        if (result.jobId && result.type === 'song') {
-          setSongJob(result.jobId, 'pending')
+        if (result.songJobId && result.type === 'song') {
+          setSongJob(result.songJobId, 'pending')
         } else {
           throw new Error('Invalid song job response')
         }
         
       } else if (outputType === 'video') {
-        // Create video job only
+        // Create both song and video jobs
+        updateSongStatus('pending')
         updateVideoStatus('pending')
+        
+        // Convert user profile photo to base64 for video generation
+        if (!userProfile.photoBlob) {
+          throw new Error('User profile photo is required for video generation')
+        }
+        
+        const userImage = {
+          data: await fileToBase64(userProfile.photoBlob as File),
+          mime_type: userProfile.photoBlob.type
+        }
         
         const response = await fetch('/api/create-job', {
           method: 'POST',
@@ -214,22 +224,24 @@ export default function SerenadeSplash() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            images: images,
-            jobType: 'video'
+            matchImages: matchImages, // Match photos for song analysis
+            userImage: userImage,     // User photo for video generation
+            generationType: 'video'
           })
         })
 
         if (!response.ok) {
           const errorText = await response.text()
-          throw new Error(`Failed to create video job: ${response.status} ${errorText}`)
+          throw new Error(`Failed to create video jobs: ${response.status} ${errorText}`)
         }
 
         const result = await response.json()
         
-        if (result.jobId && result.type === 'video') {
-          setVideoJob(result.jobId, 'pending')
+        if (result.songJobId && result.videoJobId && result.type === 'video') {
+          setSongJob(result.songJobId, 'pending')
+          setVideoJob(result.videoJobId, 'pending')
         } else {
-          throw new Error('Invalid video job response')
+          throw new Error('Invalid video job response - missing songJobId or videoJobId')
         }
       }
 
