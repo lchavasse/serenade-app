@@ -116,18 +116,35 @@ Enhanced prompt:`
       throw new Error('Failed to generate enhanced prompt');
     }
 
+    // Validate and clean the enhanced prompt
+    let cleanedPrompt = enhancedPrompt.trim();
+    
+    // Ensure the prompt is not too long (fal.ai might have limits)
+    if (cleanedPrompt.length > 500) {
+      cleanedPrompt = cleanedPrompt.substring(0, 497) + '...';
+      console.log('Truncated long prompt to 500 characters');
+    }
+    
+    // Remove any potentially problematic content patterns
+    cleanedPrompt = cleanedPrompt
+      .replace(/\b(nude|naked|explicit|nsfw)\b/gi, 'artistic')
+      .replace(/\b(violence|violent|blood|gore)\b/gi, 'dynamic');
+    
+    console.log('Cleaned prompt:', cleanedPrompt);
+
     // Update job with enhanced prompt
-    await updateJobWithEnhancedPrompt(jobId, enhancedPrompt);
+    await updateJobWithEnhancedPrompt(jobId, cleanedPrompt);
 
     // Step 3: Submit job to fal.ai
     console.log('Step 2: Submitting video generation job to fal.ai...');
     
     const { request_id } = await fal.queue.submit("fal-ai/kling-video/v2.1/standard/image-to-video", {
       input: {
-        prompt: enhancedPrompt,
+        prompt: cleanedPrompt,
         image_url: imageUrl,
-        duration: "5", // 5 seconds
-        aspect_ratio: "9:16", // Good for mobile/social media
+        duration: "5", // String format as in docs
+        aspect_ratio: "9:16", // Mobile format
+        negative_prompt: "blur, distort, and low quality", // Add default negative prompt
         cfg_scale: 0.5
       }
     });
@@ -161,6 +178,30 @@ Enhanced prompt:`
           attempts++;
           continue;
         } else {
+          // Log the full error details for debugging
+          console.error('fal.ai video generation error:', {
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            requestId: request_id,
+            attempts: attempts + 1,
+            // Try to extract the error body if it's an API error
+            errorBody: (error as any)?.body || (error as any)?.response?.data || 'No error body available'
+          });
+          
+          // Check if this is a 400 error that might indicate the job failed
+          if (error instanceof Error && error.message.includes('Bad Request')) {
+            // Try to get more details about why the request failed
+            try {
+              const statusResponse = await fal.queue.status("fal-ai/kling-video/v2.1/standard/image-to-video", {
+                requestId: request_id,
+                logs: true,
+              });
+              console.error('Job status details:', statusResponse);
+            } catch (statusError) {
+              console.error('Could not get job status:', statusError);
+            }
+          }
+          
           throw error;
         }
       }

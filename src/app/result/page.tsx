@@ -25,6 +25,12 @@ export default function ResultPage() {
   const [mounted, setMounted] = useState(false)
   const [songPolling, setSongPolling] = useState(false)
   const [videoPolling, setVideoPolling] = useState(false)
+  
+  // Lipsync video state
+  const [lipsyncJobId, setLipsyncJobId] = useState<string | null>(null)
+  const [lipsyncStatus, setLipsyncStatus] = useState<'idle' | 'pending' | 'processing' | 'completed' | 'error'>('idle')
+  const [lipsyncResult, setLipsyncResult] = useState<{ videoUrl?: string; originalVideoUrl?: string; audioUrl?: string } | null>(null)
+  const [lipsyncPolling, setLipsyncPolling] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -117,6 +123,87 @@ export default function ResultPage() {
     poll()
   }, [videoJobId, videoPolling, updateVideoStatus, updateVideoResult])
 
+  // Function to trigger lipsync generation when both song and video are ready
+  const triggerLipsyncGeneration = useCallback(async () => {
+    if (!songResult?.audioUrl || !videoResult?.videoUrl || lipsyncJobId) {
+      return // Don't trigger if we don't have both URLs or if already triggered
+    }
+
+    try {
+      console.log('🎬 Triggering lipsync generation...')
+      console.log('Audio URL:', songResult.audioUrl)
+      console.log('Video URL:', videoResult.videoUrl)
+      
+      setLipsyncStatus('pending')
+      
+      const response = await fetch('/api/generate-lipsync-video', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          videoUrl: videoResult.videoUrl,
+          audioUrl: songResult.audioUrl
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to trigger lipsync: ${response.status}`)
+      }
+
+      const { jobId } = await response.json()
+      console.log('✅ Lipsync job created:', jobId)
+      
+      setLipsyncJobId(jobId)
+      setLipsyncStatus('processing')
+      
+    } catch (error) {
+      console.error('Error triggering lipsync:', error)
+      setLipsyncStatus('error')
+    }
+  }, [songResult?.audioUrl, videoResult?.videoUrl, lipsyncJobId])
+
+  // Function to poll lipsync job status
+  const pollLipsyncStatus = useCallback(async () => {
+    if (!lipsyncJobId || lipsyncPolling) return
+    
+    setLipsyncPolling(true)
+    
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/job-status?jobId=${lipsyncJobId}`)
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch lipsync job status')
+        }
+
+        const data = await response.json()
+        
+        if (data.status === 'completed') {
+          setLipsyncStatus('completed')
+          setLipsyncResult({
+            videoUrl: data.videoUrl,
+            originalVideoUrl: data.originalVideoUrl,
+            audioUrl: data.audioUrl
+          })
+          setLipsyncPolling(false)
+        } else if (data.status === 'error') {
+          setLipsyncStatus('error')
+          setLipsyncPolling(false)
+        } else {
+          // Still processing, poll again in 5 seconds
+          setTimeout(poll, 5000)
+        }
+      } catch (error) {
+        console.error('Lipsync polling error:', error)
+        setLipsyncStatus('error')
+        setLipsyncPolling(false)
+      }
+    }
+
+    poll()
+  }, [lipsyncJobId, lipsyncPolling])
+
   useEffect(() => {
     if (!mounted) return
     
@@ -145,8 +232,32 @@ export default function ResultPage() {
     }
   }, [songJobId, videoJobId, mounted, router])
 
+  // Auto-trigger lipsync when both song and video are completed (for video mode)
+  useEffect(() => {
+    if (!mounted) return
+    
+    // If we have both video and song jobs, and both are completed, trigger lipsync
+    if (videoJobId && songJobId && 
+        songStatus === 'completed' && videoStatus === 'completed' &&
+        songResult?.audioUrl && videoResult?.videoUrl && 
+        lipsyncStatus === 'idle') {
+      console.log('🚀 Both song and video completed, triggering lipsync...')
+      triggerLipsyncGeneration()
+    }
+  }, [mounted, videoJobId, songJobId, songStatus, videoStatus, songResult?.audioUrl, videoResult?.videoUrl, lipsyncStatus, triggerLipsyncGeneration])
+
+  // Poll lipsync status when job is created
+  useEffect(() => {
+    if (!mounted) return
+    
+    if (lipsyncJobId && (lipsyncStatus === 'pending' || lipsyncStatus === 'processing')) {
+      pollLipsyncStatus()
+    }
+  }, [lipsyncJobId, lipsyncStatus, mounted, pollLipsyncStatus])
+
   const handleDownload = async () => {
-    const url = videoResult?.videoUrl || songResult?.audioUrl
+    // Prioritize final lipsync video, then regular video, then song
+    const url = lipsyncResult?.videoUrl || videoResult?.videoUrl || songResult?.audioUrl
     if (!url) return
 
     try {
@@ -156,8 +267,19 @@ export default function ResultPage() {
       const a = document.createElement('a')
       a.href = downloadUrl
       
-      const extension = videoResult?.videoUrl ? 'mp4' : 'mp3'
-      a.download = `serenade-match-${videoJobId || songJobId}.${extension}`
+      // Determine file extension and name based on what we're downloading
+      let extension = 'mp3'
+      let prefix = 'serenade-song'
+      
+      if (lipsyncResult?.videoUrl) {
+        extension = 'mp4'
+        prefix = 'serenade-lipsync-video'
+      } else if (videoResult?.videoUrl) {
+        extension = 'mp4'
+        prefix = 'serenade-video'
+      }
+      
+      a.download = `${prefix}-${lipsyncJobId || videoJobId || songJobId}.${extension}`
       
       document.body.appendChild(a)
       a.click()
@@ -169,7 +291,8 @@ export default function ResultPage() {
   }
 
   const handleShare = async () => {
-    const url = videoResult?.videoUrl || songResult?.audioUrl
+    // Prioritize final lipsync video, then regular video, then song
+    const url = lipsyncResult?.videoUrl || videoResult?.videoUrl || songResult?.audioUrl
     if (!url) return
 
     if (navigator.share) {
@@ -189,7 +312,8 @@ export default function ResultPage() {
   }
 
   const fallbackShare = () => {
-    const url = videoResult?.videoUrl || songResult?.audioUrl
+    // Prioritize final lipsync video, then regular video, then song
+    const url = lipsyncResult?.videoUrl || videoResult?.videoUrl || songResult?.audioUrl
     if (url) {
       navigator.clipboard.writeText(url)
       // You could add a toast notification here
@@ -260,28 +384,142 @@ export default function ResultPage() {
         </div>
 
         {/* Status-based content */}
-        {(songStatus === 'pending' || videoStatus === 'pending') && (
+        {(songStatus === 'pending' || videoStatus === 'pending' || lipsyncStatus === 'pending' || lipsyncStatus === 'processing') && (
           <div className="flex flex-col items-center space-y-6">
             <div className="animate-pulse">
               <Heart className="w-16 h-16 text-[#FF1493] fill-current" />
             </div>
             <div className="text-center">
               <h2 className="text-white text-xl font-semibold mb-2">
-                Creating Your Perfect Match
+                {lipsyncStatus === 'pending' || lipsyncStatus === 'processing' 
+                  ? 'Creating Final Video'
+                  : 'Creating Your Perfect Match'
+                }
               </h2>
               <p className="text-white/80">
-                Our AI is analyzing the profile and generating something special just for you...
+                {lipsyncStatus === 'pending' || lipsyncStatus === 'processing'
+                  ? 'Combining your song and video into the perfect match...'
+                  : 'Our AI is analyzing the profile and generating something special just for you...'
+                }
               </p>
             </div>
             <div className="flex items-center space-x-2">
               <RefreshCw className="w-5 h-5 text-white animate-spin" />
-              <span className="text-white">Processing...</span>
+              <span className="text-white">
+                {lipsyncStatus === 'pending' || lipsyncStatus === 'processing' 
+                  ? 'Finalizing...'
+                  : 'Processing...'
+                }
+              </span>
+            </div>
+            
+            {/* Show progress for video mode */}
+            {videoJobId && songJobId && (
+              <div className="w-full max-w-xs space-y-2">
+                <div className="flex justify-between text-white/70 text-sm">
+                  <span>Song: {songStatus === 'completed' ? '✅' : '⏳'}</span>
+                  <span>Video: {videoStatus === 'completed' ? '✅' : '⏳'}</span>
+                  <span>Final: {lipsyncStatus === 'completed' ? '✅' : lipsyncStatus === 'processing' ? '⏳' : '⏸️'}</span>
+                </div>
+                <div className="w-full bg-white/20 rounded-full h-2">
+                  <div 
+                    className="bg-gradient-to-r from-[#FF1493] to-[#00FFFF] h-2 rounded-full transition-all duration-500"
+                    style={{ 
+                      width: `${
+                        lipsyncStatus === 'completed' ? 100 :
+                        lipsyncStatus === 'processing' ? 80 :
+                        (songStatus === 'completed' ? 33 : 0) + (videoStatus === 'completed' ? 33 : 0)
+                      }%` 
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Final Lipsync Video Result (when both song and video are combined) */}
+        {lipsyncStatus === 'completed' && lipsyncResult?.videoUrl && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <h2 className="text-white text-xl font-semibold mb-2">
+                Your Perfect Match! 🎵✨🎬
+              </h2>
+              <p className="text-white/80 text-sm">
+                AI-generated song + personalized dancing video
+              </p>
+            </div>
+
+            {/* Final Combined Video Player */}
+            <div className="relative rounded-xl overflow-hidden shadow-2xl">
+              <video
+                src={lipsyncResult.videoUrl}
+                controls
+                autoPlay
+                loop
+                className="w-full h-auto"
+                style={{ maxHeight: '400px' }}
+              >
+                Your browser does not support the video tag.
+              </video>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+            </div>
+
+            {/* Action Buttons for Final Video */}
+            <div className="flex space-x-3">
+              <button
+                onClick={handleDownload}
+                className="flex-1 flex items-center justify-center space-x-2 bg-white/20 backdrop-blur-sm text-white py-3 rounded-xl border border-white/30 hover:bg-white/30 transition-all"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download Video</span>
+              </button>
+              
+              <button
+                onClick={handleShare}
+                className="flex-1 flex items-center justify-center space-x-2 bg-gradient-to-r from-[#FF1493] to-[#00FFFF] text-white py-3 rounded-xl hover:shadow-lg transform hover:scale-105 transition-all"
+              >
+                <Share className="w-4 h-4" />
+                <span>Share</span>
+              </button>
+            </div>
+
+            {/* Show individual components as smaller previews */}
+            <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 space-y-3">
+              <h3 className="text-white/80 text-sm font-medium">Components:</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {/* Song Preview */}
+                {songResult?.audioUrl && (
+                  <div className="space-y-2">
+                    <p className="text-white/60 text-xs">Generated Song</p>
+                    <audio
+                      src={songResult.audioUrl}
+                      controls
+                      className="w-full h-8"
+                      style={{ transform: 'scale(0.8)', transformOrigin: 'left' }}
+                    />
+                  </div>
+                )}
+                
+                {/* Original Video Preview */}
+                {videoResult?.videoUrl && (
+                  <div className="space-y-2">
+                    <p className="text-white/60 text-xs">Original Video</p>
+                    <video
+                      src={videoResult.videoUrl}
+                      muted
+                      loop
+                      className="w-full h-16 object-cover rounded"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Song Results */}
-        {songStatus === 'completed' && songResult?.audioUrl && (
+        {/* Individual Song Results (show only if no lipsync or in song-only mode) */}
+        {songStatus === 'completed' && songResult?.audioUrl && !lipsyncResult?.videoUrl && (
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-white text-xl font-semibold mb-2">
@@ -321,12 +559,11 @@ export default function ResultPage() {
                 <span>Share</span>
               </button>
             </div>
-
           </div>
         )}
 
         {/* Video Results */}
-        {videoStatus === 'completed' && videoResult?.videoUrl && (
+        {videoStatus === 'completed' && videoResult?.videoUrl && !lipsyncResult?.videoUrl && (
           <div className="space-y-6 mt-6">
             <div className="text-center">
               <h2 className="text-white text-xl font-semibold mb-2">
@@ -355,7 +592,7 @@ export default function ResultPage() {
           </div>
         )}
 
-        {(songStatus === 'error' || videoStatus === 'error') && (
+        {(songStatus === 'error' || videoStatus === 'error' || lipsyncStatus === 'error') && (
           <div className="flex flex-col items-center space-y-6 text-center">
             <div className="text-red-400">
               <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 20 20">

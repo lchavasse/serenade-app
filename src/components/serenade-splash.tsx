@@ -294,19 +294,16 @@ export default function SerenadeSplash() {
             <path d="M28 42V48" stroke="white" strokeWidth="2" strokeLinecap="round" />
           </svg>
 
-          <h1 className="text-white text-[72px] font-script text-center leading-tight tracking-wider drop-shadow-lg">
+          <h1 
+            className="text-white text-[72px] text-center leading-tight tracking-wider drop-shadow-lg"
+            style={{ fontFamily: "Ballet" }}
+          >
             Serenade
           </h1>
 
-          {!profileComplete ? (
             <p className="text-white/90 text-center text-lg drop-shadow-lg max-w-xs">
-              Create your profile to find your perfect match
+              your love story, in song.
             </p>
-          ) : (
-            <p className="text-white/90 text-center text-lg drop-shadow-lg max-w-xs">
-              Upload their profile, discover your perfect match
-            </p>
-          )}
         </div>
 
         {!profileComplete ? (
@@ -334,7 +331,7 @@ export default function SerenadeSplash() {
               <label className="block text-white text-sm font-medium mb-2 drop-shadow-lg">
                 Your Photo
               </label>
-              <p className="text-white/70 text-xs mb-3 drop-shadow-lg">
+              <p className="text-white/70 text-xs mb-3 drop-shadow-lg italic">
                 Choose a photo of you dancing and having fun
               </p>
               
@@ -377,8 +374,8 @@ export default function SerenadeSplash() {
               <label className="block text-white text-sm font-medium mb-2 drop-shadow-lg">
                 Your Passions & Interests
               </label>
-              <p className="text-white/70 text-xs mb-3 drop-shadow-lg">
-                Comma-separated words or phrases
+              <p className="text-white/70 text-xs mb-3 drop-shadow-lg italic">
+                To entice your match.
               </p>
               
               <div className="relative">

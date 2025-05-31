@@ -29,49 +29,101 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { jobId, images } = req.body;
+    const { jobId, images, imageData, prompt } = req.body;
     
-    // Validate required parameters for new discriminated union format
-    if (!jobId || !images || !Array.isArray(images) || images.length === 0) {
-      return res.status(400).json({ error: 'jobId and images array are required' });
-    }
-
-    // Get the first image for video generation
-    const firstImage = images[0];
-    if (!firstImage || !firstImage.data || !firstImage.mime_type) {
-      return res.status(400).json({ error: 'Invalid image data' });
-    }
-
-    // Convert base64 image to fal.ai storage URL
+    // Support two formats:
+    // Format 1: Job system format { jobId, images }
+    // Format 2: Direct format { imageData, prompt }
+    
+    let finalJobId: string;
     let finalImageUrl: string;
-    try {
-      console.log('Uploading image to fal.ai storage...');
-      
-      // Convert base64 to blob
-      const base64Data = firstImage.data;
-      const buffer = Buffer.from(base64Data, 'base64');
-      const blob = new Blob([buffer], { type: firstImage.mime_type || 'image/jpeg' });
-      
-      // Upload to fal.ai storage
-      finalImageUrl = await fal.storage.upload(blob);
-      console.log('Image uploaded to fal.ai:', finalImageUrl);
-      
-    } catch (uploadError) {
-      console.error('Failed to upload image to fal.ai:', uploadError);
-      return res.status(500).json({ error: 'Failed to upload image' });
-    }
+    let finalPrompt: string;
+    
+    if (jobId && images) {
+      // Job system format
+      if (!Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ error: 'images array is required when using jobId format' });
+      }
 
-    // Update job with image URL
-    await updateJobWithImageUrl(jobId, finalImageUrl);
+      const firstImage = images[0];
+      if (!firstImage || !firstImage.data || !firstImage.mime_type) {
+        return res.status(400).json({ error: 'Invalid image data' });
+      }
+
+      finalJobId = jobId;
+      finalPrompt = "Create an engaging dancing video with smooth movements and good lighting";
+      
+      // Convert base64 image to fal.ai storage URL
+      try {
+        console.log('Uploading image to fal.ai storage...');
+        
+        const buffer = Buffer.from(firstImage.data, 'base64');
+        const blob = new Blob([buffer], { type: firstImage.mime_type || 'image/jpeg' });
+        
+        finalImageUrl = await fal.storage.upload(blob);
+        console.log('Image uploaded to fal.ai:', finalImageUrl);
+        
+      } catch (uploadError) {
+        console.error('Failed to upload image to fal.ai:', uploadError);
+        return res.status(500).json({ error: 'Failed to upload image' });
+      }
+
+      // Update job with image URL
+      await updateJobWithImageUrl(finalJobId, finalImageUrl);
+      
+    } else if (imageData && prompt) {
+      // Direct format for testing
+      const { v4: uuidv4 } = require('uuid');
+      finalJobId = uuidv4();
+      finalPrompt = prompt;
+      
+      try {
+        console.log('Processing direct image data...');
+        
+        // Remove data URL prefix if present
+        const base64Data = imageData.includes(',') ? imageData.split(',')[1] : imageData;
+        const buffer = Buffer.from(base64Data, 'base64');
+        const blob = new Blob([buffer], { type: 'image/jpeg' });
+        
+        finalImageUrl = await fal.storage.upload(blob);
+        console.log('Image uploaded to fal.ai:', finalImageUrl);
+        
+      } catch (uploadError) {
+        console.error('Failed to process image data:', uploadError);
+        return res.status(500).json({ error: 'Failed to process image data' });
+      }
+      
+      // Create job record in Redis for direct format
+      const now = new Date().toISOString();
+      const jobData: JobData = {
+        jobId: finalJobId,
+        type: 'video',
+        status: 'processing',
+        imageUrl: finalImageUrl,
+        createdAt: now,
+        updatedAt: now,
+      };
+      
+      await redis.set(`job:${finalJobId}`, JSON.stringify(jobData), { ex: 86400 });
+      console.log('Created job record for direct format:', finalJobId);
+      
+    } else {
+      return res.status(400).json({ 
+        error: 'Either (jobId + images) or (imageData + prompt) must be provided' 
+      });
+    }
 
     // Respond immediately
-    res.status(200).json({ message: 'Video generation started' });
+    res.status(200).json({ 
+      message: 'Video generation started',
+      jobId: finalJobId 
+    });
 
     // Use waitUntil to process in background without blocking the response
     waitUntil(
-      processDancingVideoInBackground(jobId, finalImageUrl, "Create an engaging dancing video with smooth movements and good lighting").catch((error: Error) => {
+      processDancingVideoInBackground(finalJobId, finalImageUrl, finalPrompt).catch((error: Error) => {
         console.error('Background video processing error:', error);
-        updateJobWithError(jobId, error instanceof Error ? error.message : 'Unknown error');
+        updateJobWithError(finalJobId, error instanceof Error ? error.message : 'Unknown error');
       })
     );
 

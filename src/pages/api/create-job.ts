@@ -71,7 +71,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Create job based on discriminated union
     let jobData: JobData;
     
-    if (jobType === 'song') {
+    if (jobType === 'song' || jobType === 'video') {
       jobData = {
         jobId,
         type: 'song',
@@ -88,9 +88,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         })
       );
       
-    } else if (jobType === 'video') {
+    } else {
+      return res.status(400).json({ error: 'Invalid job type' });
+    }
+    
+    if (jobType === 'video') {
+      const additionalJobId = uuidv4();
+      console.log(`Additional job ID: ${additionalJobId}`);
       jobData = {
-        jobId,
+        jobId: additionalJobId,
         type: 'video', 
         status: 'pending',
         createdAt: now,
@@ -105,8 +111,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         })
       );
       
-    } else {
-      return res.status(400).json({ error: 'Invalid job type' });
     }
 
     // Store job in Redis
