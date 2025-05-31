@@ -8,16 +8,42 @@ interface UserProfile {
   passions: string;
 }
 
+// Job status types
+type JobStatus = 'idle' | 'pending' | 'processing' | 'completed' | 'error';
+
+// Result types for each job
+interface SongResult {
+  audioUrl?: string;
+  lyrics?: string;
+  analysis?: string;
+  style?: string;
+  sunoTaskId?: string;
+}
+
+interface VideoResult {
+  videoUrl?: string;
+  imageUrl?: string;
+  enhancedPrompt?: string;
+  falRequestId?: string;
+}
+
 interface AppState {
   // User profile data
   userProfile: UserProfile;
   profileComplete: boolean;
   
-  // Match generation data
+  // Match generation data (keeping screenshot for legacy compatibility)
   screenshot: Blob | null;
-  jobId: string | null;
-  status: 'idle' | 'pending' | 'done' | 'error';
   imageUrl: string | null;
+  
+  // Individual job tracking
+  songJobId: string | null;
+  songStatus: JobStatus;
+  songResult: SongResult | null;
+  
+  videoJobId: string | null;
+  videoStatus: JobStatus;
+  videoResult: VideoResult | null;
   
   // User profile actions
   setUserProfile: (profile: UserProfile) => void;
@@ -25,13 +51,20 @@ interface AppState {
   
   // Match generation actions
   setScreenshot: (b: Blob) => void;
-  setJobId: (id: string) => void;
-  setStatus: (status: 'idle' | 'pending' | 'done' | 'error') => void;
   setImageUrl: (url: string) => void;
+  
+  // Job management actions
+  setSongJob: (id: string, status: JobStatus, result?: SongResult) => void;
+  setVideoJob: (id: string, status: JobStatus, result?: VideoResult) => void;
+  updateSongStatus: (status: JobStatus) => void;
+  updateVideoStatus: (status: JobStatus) => void;
+  updateSongResult: (result: SongResult) => void;
+  updateVideoResult: (result: VideoResult) => void;
   
   // Reset actions
   reset: () => void; // Resets everything including user profile
   resetMatch: () => void; // Only resets match-related data, keeps user profile
+  resetJobs: () => void; // Only resets job-related data
 }
 
 export const useStore = create<AppState>()(persist(
@@ -47,9 +80,15 @@ export const useStore = create<AppState>()(persist(
     
     // Initial match generation state
     screenshot: null,
-    jobId: null,
-    status: 'idle',
     imageUrl: null,
+    
+    // Initial job tracking state
+    songJobId: null,
+    songStatus: 'idle',
+    songResult: null,
+    videoJobId: null,
+    videoStatus: 'idle',
+    videoResult: null,
     
     // User profile actions
     setUserProfile: (profile: UserProfile) => set({ userProfile: profile }),
@@ -57,9 +96,15 @@ export const useStore = create<AppState>()(persist(
     
     // Match generation actions
     setScreenshot: (b: Blob) => set({ screenshot: b }),
-    setJobId: (id: string) => set({ jobId: id }),
-    setStatus: (status: 'idle' | 'pending' | 'done' | 'error') => set({ status }),
     setImageUrl: (url: string) => set({ imageUrl: url }),
+    
+    // Job management actions
+    setSongJob: (id: string, status: JobStatus, result?: SongResult) => set({ songJobId: id, songStatus: status, songResult: result }),
+    setVideoJob: (id: string, status: JobStatus, result?: VideoResult) => set({ videoJobId: id, videoStatus: status, videoResult: result }),
+    updateSongStatus: (status: JobStatus) => set({ songStatus: status }),
+    updateVideoStatus: (status: JobStatus) => set({ videoStatus: status }),
+    updateSongResult: (result: SongResult) => set({ songResult: result }),
+    updateVideoResult: (result: VideoResult) => set({ videoResult: result }),
     
     // Reset actions
     reset: () => set({ 
@@ -71,15 +116,31 @@ export const useStore = create<AppState>()(persist(
       },
       profileComplete: false,
       screenshot: null, 
-      jobId: null, 
-      status: 'idle', 
-      imageUrl: null 
+      imageUrl: null, 
+      songJobId: null, 
+      songStatus: 'idle', 
+      songResult: null,
+      videoJobId: null,
+      videoStatus: 'idle',
+      videoResult: null
     }),
     resetMatch: () => set({ 
       screenshot: null, 
-      jobId: null, 
-      status: 'idle', 
-      imageUrl: null 
+      imageUrl: null, 
+      songJobId: null, 
+      songStatus: 'idle', 
+      songResult: null,
+      videoJobId: null,
+      videoStatus: 'idle',
+      videoResult: null
+    }),
+    resetJobs: () => set({ 
+      songJobId: null, 
+      songStatus: 'idle', 
+      songResult: null,
+      videoJobId: null,
+      videoStatus: 'idle',
+      videoResult: null
     }),
   }),
   {
@@ -108,9 +169,13 @@ export const useStore = create<AppState>()(persist(
       },
       profileComplete: state.profileComplete,
       screenshot: null, // Don't persist Blob objects
-      jobId: state.jobId,
-      status: state.status,
-      imageUrl: state.imageUrl
+      imageUrl: state.imageUrl,
+      songJobId: state.songJobId,
+      songStatus: state.songStatus,
+      songResult: state.songResult,
+      videoJobId: state.videoJobId,
+      videoStatus: state.videoStatus,
+      videoResult: state.videoResult
     })
   }
 ));

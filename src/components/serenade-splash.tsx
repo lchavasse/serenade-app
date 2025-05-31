@@ -15,8 +15,10 @@ export default function SerenadeSplash() {
     setUserProfile, 
     setProfileComplete,
     setScreenshot, 
-    setJobId, 
-    setStatus 
+    setSongJob,
+    setVideoJob,
+    updateSongStatus,
+    updateVideoStatus
   } = useStore()
   
   const [isAnalyzingPassions, setIsAnalyzingPassions] = useState(false)
@@ -159,7 +161,6 @@ export default function SerenadeSplash() {
     if (matchPhotos.length === 0) return
 
     setIsUploading(true)
-    setStatus('pending')
 
     try {
       // Convert first file to blob and store in state (for backwards compatibility)
@@ -174,29 +175,62 @@ export default function SerenadeSplash() {
       
       const images = await Promise.all(imagePromises)
 
-      // Submit to API with new discriminated union format
-      const response = await fetch('/api/create-job', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          images: images,
-          jobType: outputType
+      // Create jobs based on output type selection
+      if (outputType === 'song') {
+        // Create song job only
+        updateSongStatus('pending')
+        
+        const response = await fetch('/api/create-job', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            images: images,
+            jobType: 'song'
+          })
         })
-      })
+        
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`Failed to create song job: ${response.status} ${errorText}`)
+        }
 
-      if (!response.ok) {
-        throw new Error('Failed to create job')
-      }
+        const result = await response.json()
+        
+        if (result.jobId && result.type === 'song') {
+          setSongJob(result.jobId, 'pending')
+        } else {
+          throw new Error('Invalid song job response')
+        }
+        
+      } else if (outputType === 'video') {
+        // Create video job only
+        updateVideoStatus('pending')
+        
+        const response = await fetch('/api/create-job', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            images: images,
+            jobType: 'video'
+          })
+        })
 
-      const result = await response.json()
-      
-      // Handle the new discriminated union response format
-      if (result.jobId && result.type) {
-        setJobId(result.jobId)
-      } else {
-        throw new Error('Invalid response format')
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`Failed to create video job: ${response.status} ${errorText}`)
+        }
+
+        const result = await response.json()
+        
+        if (result.jobId && result.type === 'video') {
+          setVideoJob(result.jobId, 'pending')
+        } else {
+          throw new Error('Invalid video job response')
+        }
       }
 
       // Navigate to result page
@@ -204,7 +238,8 @@ export default function SerenadeSplash() {
 
     } catch (error) {
       console.error('Upload error:', error)
-      setStatus('error')
+      updateSongStatus('error')
+      updateVideoStatus('error')
     } finally {
       setIsUploading(false)
     }
