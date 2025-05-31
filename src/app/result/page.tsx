@@ -11,6 +11,8 @@ export default function ResultPage() {
   const [polling, setPolling] = useState(false)
   const [analysis, setAnalysis] = useState<string>("")
   const [mounted, setMounted] = useState(false)
+  const [videoUrl, setVideoUrl] = useState<string>("")
+  const [contentType, setContentType] = useState<'image' | 'video'>('image')
 
   useEffect(() => {
     setMounted(true)
@@ -46,7 +48,16 @@ export default function ResultPage() {
         
         if (data.status === 'done') {
           setStatus('done')
-          setImageUrl(data.imageUrl)
+          
+          // Handle both image and video results
+          if (data.imageUrl) {
+            setImageUrl(data.imageUrl)
+            setContentType('image')
+          } else if (data.videoUrl) {
+            setVideoUrl(data.videoUrl)
+            setContentType('video')
+          }
+          
           setAnalysis(data.analysis || "")
           setPolling(false)
         } else if (data.status === 'error') {
@@ -67,33 +78,38 @@ export default function ResultPage() {
   }
 
   const handleDownload = async () => {
-    if (!imageUrl) return
+    const url = contentType === 'video' ? videoUrl : imageUrl
+    if (!url) return
 
     try {
-      const response = await fetch(imageUrl)
+      const response = await fetch(url)
       const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
+      const downloadUrl = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url
-      a.download = `serenade-match-${jobId}.png`
+      a.href = downloadUrl
+      
+      const extension = contentType === 'video' ? 'mp4' : 'png'
+      a.download = `serenade-match-${jobId}.${extension}`
+      
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
+      window.URL.revokeObjectURL(downloadUrl)
     } catch (error) {
       console.error('Download error:', error)
     }
   }
 
   const handleShare = async () => {
-    if (!imageUrl) return
+    const url = contentType === 'video' ? videoUrl : imageUrl
+    if (!url) return
 
     if (navigator.share) {
       try {
         await navigator.share({
           title: 'My Perfect Match from Serenade',
           text: 'Check out who Serenade thinks is my perfect match!',
-          url: imageUrl
+          url: url
         })
       } catch (error) {
         console.error('Share error:', error)
@@ -105,8 +121,9 @@ export default function ResultPage() {
   }
 
   const fallbackShare = () => {
-    if (imageUrl) {
-      navigator.clipboard.writeText(imageUrl)
+    const url = contentType === 'video' ? videoUrl : imageUrl
+    if (url) {
+      navigator.clipboard.writeText(url)
       // You could add a toast notification here
       alert('Link copied to clipboard!')
     }
@@ -205,7 +222,7 @@ export default function ResultPage() {
           </div>
         )}
 
-        {status === 'done' && imageUrl && (
+        {status === 'done' && (imageUrl || videoUrl) && (
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-white text-xl font-semibold mb-2">
@@ -216,14 +233,33 @@ export default function ResultPage() {
               </p>
             </div>
 
-            {/* Generated Image */}
+            {/* Generated Content */}
             <div className="relative rounded-xl overflow-hidden shadow-2xl">
-              <img
-                src={imageUrl}
-                alt="Your perfect match"
-                className="w-full h-auto"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+              {contentType === 'image' && imageUrl ? (
+                <>
+                  <img
+                    src={imageUrl}
+                    alt="Your perfect match"
+                    className="w-full h-auto"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                </>
+              ) : contentType === 'video' && videoUrl ? (
+                <>
+                  <video
+                    src={videoUrl}
+                    controls
+                    autoPlay
+                    muted
+                    loop
+                    className="w-full h-auto"
+                    style={{ maxHeight: '400px' }}
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+                </>
+              ) : null}
             </div>
 
             {/* Action Buttons */}
@@ -233,7 +269,7 @@ export default function ResultPage() {
                 className="flex-1 flex items-center justify-center space-x-2 bg-white/20 backdrop-blur-sm text-white py-3 rounded-xl border border-white/30 hover:bg-white/30 transition-all"
               >
                 <Download className="w-4 h-4" />
-                <span>Download</span>
+                <span>Download {contentType === 'video' ? 'Video' : 'Image'}</span>
               </button>
               
               <button

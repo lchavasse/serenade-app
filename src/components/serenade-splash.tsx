@@ -232,9 +232,12 @@ export default function SerenadeSplash() {
 
         {/* Caption */}
         {!photos.length && (
-          <div className="flex items-center text-white text-sm drop-shadow-lg">
-            <span>upload photos to get started</span>
-            <ArrowRight className="ml-2 w-4 h-4" />
+          <div className="flex flex-col items-center space-y-4">
+            <div className="flex items-center text-white text-sm drop-shadow-lg">
+              <span>upload photos to get started</span>
+              <ArrowRight className="ml-2 w-4 h-4" />
+            </div>
+            
           </div>
         )}
       </div>

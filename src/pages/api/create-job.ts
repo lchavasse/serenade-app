@@ -2,7 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { v4 as uuidv4 } from 'uuid';
 import redis from '@/lib/redis';
 
-// Import the background processing function directly
+// Import the background processing function for local development
 import { processImageInBackground } from './generate.background';
 
 // Configure API route to allow larger body sizes for image uploads
@@ -43,7 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(202).json({ jobId });
 
     // For local development, process directly
-    // For production on Vercel, this could be moved to a background function
+    // For production on Vercel, use HTTP calls to background function
     if (process.env.NODE_ENV === 'development') {
       console.log('Local development: Processing images directly...');
       
@@ -62,8 +62,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         );
       });
     } else {
-      // In production, use Vercel Background Functions
-      console.log('Production: Invoking background function...');
+      // In production, use Vercel Background Functions via HTTP
+      console.log('Production: Invoking background function via HTTP...');
       
       const backgroundResponse = await fetch(`${process.env.VERCEL_URL || 'http://localhost:3000'}/api/generate.background`, {
         method: 'POST',
@@ -77,7 +77,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
 
       if (!backgroundResponse.ok) {
-        throw new Error('Failed to start background processing');
+        const errorText = await backgroundResponse.text();
+        console.error('Background function failed:', errorText);
+        
+        // Update Redis with error status
+        await redis.set(
+          `job:${jobId}`, 
+          JSON.stringify({ 
+            status: 'error', 
+            error: 'Failed to start background processing'
+          }), 
+          { ex: 86400 }
+        );
+      } else {
+        console.log('Background function started successfully');
       }
     }
 
