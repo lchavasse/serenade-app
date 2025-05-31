@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react"
 import { useStore } from "@/lib/store"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Download, Share, RefreshCw, Heart } from "lucide-react"
+import { Download, Share, RefreshCw, Heart } from "lucide-react"
+import Image from "next/image"
 
 export default function ResultPage() {
-  const { jobId, status, imageUrl, setStatus, setImageUrl, reset } = useStore()
+  const { jobId, status, imageUrl, setStatus, setImageUrl, resetMatch } = useStore()
   const router = useRouter()
   const [polling, setPolling] = useState(false)
   const [analysis, setAnalysis] = useState<string>("")
@@ -17,19 +18,6 @@ export default function ResultPage() {
   useEffect(() => {
     setMounted(true)
   }, [])
-
-  useEffect(() => {
-    if (!mounted) return
-    
-    if (!jobId) {
-      router.push('/')
-      return
-    }
-
-    if (status === 'pending') {
-      pollJobStatus()
-    }
-  }, [jobId, status, mounted, router])
 
   const pollJobStatus = async () => {
     if (polling) return
@@ -76,6 +64,19 @@ export default function ResultPage() {
 
     poll()
   }
+
+  useEffect(() => {
+    if (!mounted) return
+    
+    if (!jobId) {
+      router.push('/')
+      return
+    }
+
+    if (status === 'pending') {
+      pollJobStatus()
+    }
+  }, [jobId, status, mounted, router, pollJobStatus])
 
   const handleDownload = async () => {
     const url = contentType === 'video' ? videoUrl : imageUrl
@@ -130,11 +131,7 @@ export default function ResultPage() {
   }
 
   const handleStartOver = () => {
-    reset()
-    router.push('/')
-  }
-
-  const handleBack = () => {
+    resetMatch()
     router.push('/')
   }
 
@@ -183,13 +180,7 @@ export default function ResultPage() {
       <div className="relative z-10 w-full max-w-md mt-8 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <button
-            onClick={handleBack}
-            className="flex items-center space-x-2 text-white hover:text-[#00FFFF] transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back</span>
-          </button>
+          <div className="w-20"></div> {/* Spacer for centering */}
           
           <h1 className="text-white text-2xl font-bold">Your Match</h1>
           
@@ -237,9 +228,11 @@ export default function ResultPage() {
             <div className="relative rounded-xl overflow-hidden shadow-2xl">
               {contentType === 'image' && imageUrl ? (
                 <>
-                  <img
+                  <Image
                     src={imageUrl}
                     alt="Your perfect match"
+                    width={400}
+                    height={400}
                     className="w-full h-auto"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
