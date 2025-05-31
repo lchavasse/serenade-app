@@ -7,7 +7,7 @@ import { waitUntil } from '@vercel/functions';
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '10mb', // Increase from default 1mb to 10mb
+      sizeLimit: '25mb', // Increase from 10mb to 25mb to handle larger mobile images for video generation
     },
   },
 }

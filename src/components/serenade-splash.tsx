@@ -73,6 +73,61 @@ export default function SerenadeSplash() {
     })
   }
 
+  const compressImage = (file: File, maxWidth = 1024, maxHeight = 1024, quality = 0.8): Promise<File> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        resolve(file) // Fallback to original if canvas context is not available
+        return
+      }
+      
+      const img = document.createElement('img')
+      
+      img.onload = () => {
+        // Calculate new dimensions while maintaining aspect ratio
+        let { width, height } = img
+        
+        if (width > height) {
+          if (width > maxWidth) {
+            height = (height * maxWidth) / width
+            width = maxWidth
+          }
+        } else {
+          if (height > maxHeight) {
+            width = (width * maxHeight) / height
+            height = maxHeight
+          }
+        }
+        
+        canvas.width = width
+        canvas.height = height
+        
+        // Draw and compress
+        ctx.drawImage(img, 0, 0, width, height)
+        
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const compressedFile = new File([blob], file.name, {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+              })
+              resolve(compressedFile)
+            } else {
+              resolve(file) // Fallback to original if compression fails
+            }
+          },
+          'image/jpeg',
+          quality
+        )
+      }
+      
+      img.onerror = () => resolve(file) // Fallback to original if loading fails
+      img.src = URL.createObjectURL(file)
+    })
+  }
+
   const handleUserPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
@@ -167,12 +222,25 @@ export default function SerenadeSplash() {
       const blob = await convertFileToBlob(matchPhotos[0])
       setScreenshot(blob)
 
-      // Convert match photos to base64 for song analysis
-      const matchImagePromises = matchPhotos.map(async (photo) => ({
+      // Compress and convert match photos to base64 for song analysis
+      console.log('Compressing match photos for optimal payload size...')
+      const compressedMatchPhotos = await Promise.all(
+        matchPhotos.map(photo => compressImage(photo, 1024, 1024, 0.8))
+      )
+      
+      const matchImagePromises = compressedMatchPhotos.map(async (photo) => ({
         data: await fileToBase64(photo),
         mime_type: photo.type
       }))
       const matchImages = await Promise.all(matchImagePromises)
+
+      console.log('Payload size optimization:', {
+        originalPhotosCount: matchPhotos.length,
+        compressedPhotosCount: compressedMatchPhotos.length,
+        estimatedPayloadSizeMB: Math.round(
+          matchImages.reduce((total, img) => total + (img.data.length * 0.75 / 1024 / 1024), 0) * 100
+        ) / 100
+      })
 
       // Create jobs based on output type selection
       if (outputType === 'song') {
@@ -225,9 +293,13 @@ export default function SerenadeSplash() {
           fileSize: photoFile.size
         })
         
+        // Compress user photo to reduce payload size
+        console.log('Compressing user photo for optimal payload size...')
+        const compressedUserPhoto = await compressImage(photoFile, 1024, 1024, 0.8)
+        
         let userImageData: string
         try {
-          userImageData = await fileToBase64(photoFile)
+          userImageData = await fileToBase64(compressedUserPhoto)
         } catch (error) {
           console.error('Failed to convert user photo to base64:', error)
           throw new Error('Failed to process user profile photo')
@@ -235,12 +307,16 @@ export default function SerenadeSplash() {
         
         const userImage = {
           data: userImageData,
-          mime_type: photoFile.type
+          mime_type: compressedUserPhoto.type
         }
         
         console.log('Making video generation API call...', {
           matchImagesCount: matchImages.length,
-          userImageType: userImage.mime_type
+          userImageType: userImage.mime_type,
+          totalEstimatedPayloadSizeMB: Math.round(
+            (matchImages.reduce((total, img) => total + (img.data.length * 0.75 / 1024 / 1024), 0) +
+             (userImage.data.length * 0.75 / 1024 / 1024)) * 100
+          ) / 100
         })
         
         const response = await fetch('/api/create-job', {
