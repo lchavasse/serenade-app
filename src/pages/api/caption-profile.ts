@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
-import { CAPTION_PROMPT } from '../prompts';
+import { CAPTION_PROMPT } from '../../lib/prompts';
 
 // Configure runtime for API route
 export const config = {

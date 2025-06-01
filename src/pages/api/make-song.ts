@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
-import { songPrompt } from '../prompts';
+import { songPrompt } from '../../lib/prompts';
 
 // Configure OpenAI SDK to use OpenRouter
 const openrouter = new OpenAI({

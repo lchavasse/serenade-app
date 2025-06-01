@@ -111,7 +111,7 @@ Write a chorus.
 - Do not invent facts—reuse phrases from the profiles when helpful.
 - The user wants to flirt with the match in a ${how_flirt} way.
 
-Add one production note. One sentence naming tempo, vibe/genre, and any key sonic elements (e.g., “bright synth stabs over four-on-the-floor kick”).
+Add one production note. One sentence naming tempo, vibe/genre, and any key sonic elements (e.g., "bright synth stabs over four-on-the-floor kick").
 
 OUTPUT — SCHEMA VALID JSON ONLY
 
@@ -133,4 +133,4 @@ Lyrics must focus on the chosen overlaps; ignore unrelated profile details.
 
 No emojis, no line numbers, no markdown formatting.
 
-`;
+`; 

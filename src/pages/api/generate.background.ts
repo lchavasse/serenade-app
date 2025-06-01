@@ -2,7 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
 import redis from '@/lib/redis';
 import { JobData } from './create-job';
-import { ANALYSIS_PROMPT } from '../prompts';
+import { ANALYSIS_PROMPT } from '../../lib/prompts';
 
 // Configure runtime for background function
 export const config = {
