@@ -68,8 +68,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Process as soon as we get the first audio track
-    if (callbackData.data?.callbackType !== 'completed') {
-      console.log(`Suno callback with status '${callbackData.data?.callbackType}' - waiting for completed...`);
+    if (callbackData.data?.callbackType !== 'complete') {
+      console.log(`Suno callback with status '${callbackData.data?.callbackType}' - waiting for complete...`);
       return res.status(200).json({ message: `Callback received - status: ${callbackData.data?.callbackType}` });
     }
 
