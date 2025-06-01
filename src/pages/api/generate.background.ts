@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
 import redis from '@/lib/redis';
 import { JobData } from './create-job';
+import { ANALYSIS_PROMPT } from '../prompts';
 
 // Configure runtime for background function
 export const config = {
@@ -24,18 +25,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { jobId, images } = req.body;
+  const { jobId, images, how_flirt, user_profile } = req.body;
 
   if (!jobId || !images) {
     return res.status(400).json({ error: 'Missing jobId or images data' });
   }
+
+  // Provide default values if not present (for backward compatibility)
+  const flirtLevel = how_flirt || 'Romantic';
+  const profile = user_profile || { name: 'Someone Special', passions: 'life and adventure' };
 
   // Respond immediately to avoid timeout
   res.status(200).json({ message: 'Song generation started' });
 
   // Process in background
   try {
-    await generateSong(jobId, images);
+    await generateSong(jobId, images, flirtLevel, profile);
   } catch (error) {
     console.error('Song generation error:', error);
     await updateJobWithError(jobId, error instanceof Error ? error.message : 'Unknown error');
@@ -43,36 +48,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 }
 
 // Main song generation function
-export async function generateSong(jobId: string, images: { data: string; mime_type: string }[]) {
+export async function generateSong(jobId: string, images: { data: string; mime_type: string }[], how_flirt: string, user_profile: { name: string, passions: string }) {
   try {
     console.log(`Starting song generation for job ${jobId} with ${images.length} images`);
 
     // Update job status to processing
     await createJobWithPendingStatus(jobId);
 
-    // Step 1: Analyze the dating profile with OpenRouter
-    console.log('Step 1: Analyzing dating profile...');
+    // Step 1: Generate detailed captions for profile images
+    console.log('Step 1: Generating profile image captions...');
     
-    const analysisPrompt = `
-    Extract information from images of dating-profile and output a JSON object that follows the given schema. Provide your judgment about the profile content for fields except "hooks_quotes," which should contain exact quotes. Focus on both the text content and the visuals and photos in the profile to make judgements about the user's personality humour, interests lifestyle, fashion aesthetic, music culture, relationship emotion and visual cues.
+    const captionResponse = await fetch(`${process.env.YOUR_SITE_URL || 'http://localhost:3000'}/api/caption-profile`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        images: images
+      })
+    });
 
-SCHEMA:
-{
-  "basic": { "name": "", "age": 0, "gender": "", "height": "", "location": "" , "preferred_relationship_type": "",  "kind_of_dating": "", "sexual_oreintation": ""},
-  "personality_humour": "",
-  "interests_lifestyle": "",
-  "fashion_aesthetic": "",
-  "music_culture": "",
-  "relationship_emotion": "",
-  "visual_cues": "",
-  "hooks_quotes": []
-}
+    if (!captionResponse.ok) {
+      throw new Error(`Caption API request failed: ${captionResponse.status} ${captionResponse.statusText}`);
+    }
 
-# Output Format
+    const captionData = await captionResponse.json();
+    
+    if (!captionData.success || !captionData.captions) {
+      throw new Error('Failed to generate image captions');
+    }
 
-- Return a JSON object strictly adhering to the provided schema.
-- Fill fields with judgments based on the profile, except for "hooks_quotes," which should include exact quotes from the profile.
-    `;
+    console.log(`Generated ${captionData.captions.length} image captions`);
+
+    // Step 2: Analyze the dating profile with OpenRouter (for basic profile data)
+    console.log('Step 2: Analyzing dating profile for basic information...');
+    
+    const analysisPrompt = ANALYSIS_PROMPT;
 
     const content = [
       {
@@ -104,28 +115,15 @@ SCHEMA:
     // Update job with analysis
     await updateJobWithAnalysis(jobId, analysis || '');
 
-    // Step 2: Generate song lyrics using make-song endpoint
-    console.log('Step 2: Generating song lyrics using make-song endpoint...');
+    // Step 3: Generate song lyrics using make-song endpoint with captions
+    console.log('Step 3: Generating song lyrics using make-song endpoint...');
     
     // Create a placeholder user profile for the make-song endpoint
-    const placeholderUserProfile = JSON.stringify({
+    const userProfile = JSON.stringify({
       "basic": {
-        "name": "Alex",
-        "age": 27,
-        "gender": "non-binary",
-        "height": "5'8\"",
-        "location": "San Francisco, CA",
-        "preferred_relationship_type": "serious",
-        "kind_of_dating": "monogamous",
-        "sexual_oreintation": "pansexual"
+        "name": user_profile.name,
       },
-      "personality_humour": "Witty and playful, loves wordplay and spontaneous adventures",
-      "interests_lifestyle": "Coffee enthusiast, hiking, indie music, bookstores, cooking",
-      "fashion_aesthetic": "Casual chic, vintage band tees, sustainable fashion",
-      "music_culture": "Indie rock, folk, electronic, attends local concerts",
-      "relationship_emotion": "Looking for deep connection and shared experiences",
-      "visual_cues": "Always has coffee in hand, loves cozy spaces and natural light",
-      "hooks_quotes": ["Life's too short for bad coffee", "Adventure awaits", "Let's explore together"]
+      "passions": user_profile.passions
     });
 
     const makeSongResponse = await fetch(`${process.env.YOUR_SITE_URL || 'http://localhost:3000'}/api/make-song`, {
@@ -134,8 +132,10 @@ SCHEMA:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        user_profile: placeholderUserProfile,
-        match_profile: analysis || "{}"
+        user_profile: userProfile,
+        match_profile: analysis || "{}",
+        match_captions: captionData.captions,
+        how_flirt: how_flirt
       }),
     });
 
@@ -150,8 +150,8 @@ SCHEMA:
     await updateJobWithLyrics(jobId, lyricsData.lyrics || '');
     await updateJobWithStyle(jobId, lyricsData.style_prompt || 'pop ballad');
 
-    // Step 3: Generate song using make-noise endpoint
-    console.log('Step 3: Generating song using make-noise endpoint...');
+    // Step 4: Generate song using make-noise endpoint
+    console.log('Step 4: Generating song using make-noise endpoint...');
     
     const makeNoiseResponse = await fetch(`${process.env.YOUR_SITE_URL || 'http://localhost:3000'}/api/make-noise`, {
       method: 'POST',

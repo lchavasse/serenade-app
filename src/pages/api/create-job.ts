@@ -98,6 +98,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (generationType === 'song') {
       // Create song job only
       const songJobId = uuidv4();
+
+      const {how_flirt, user_profile} = req.body;
+
+
       
       const songJobData: JobData = {
         jobId: songJobId,
@@ -112,7 +116,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       
       // Start song generation in background
       waitUntil(
-        processSongInBackground(songJobId, songImages).catch((error: Error) => {
+        processSongInBackground(songJobId, songImages, how_flirt, user_profile).catch((error: Error) => {
           console.error('Song processing error:', error);
           updateJobWithError(songJobId, error.message);
         })
@@ -204,10 +208,10 @@ async function updateJobWithError(jobId: string, errorMessage: string) {
 }
 
 // Song processing function
-async function processSongInBackground(jobId: string, images: { data: string; mime_type: string }[]) {
+async function processSongInBackground(jobId: string, images: { data: string; mime_type: string }[], how_flirt: string, user_profile: { name: string, passions: string }) {
   // Import here to avoid circular dependencies
   const { generateSong } = await import('./generate.background');
-  await generateSong(jobId, images);
+  await generateSong(jobId, images, how_flirt, user_profile);
 }
 
 // Video processing function  

@@ -32,7 +32,7 @@ export default function SerenadeSplash() {
   const [isUploading, setIsUploading] = useState(false)
 
   // Settings state
-  const [ratingLevel, setRatingLevel] = useState(5)
+  const [ratingLevel, setRatingLevel] = useState(2)
   const [outputType, setOutputType] = useState<'song' | 'video'>('song')
   
   const router = useRouter()
@@ -334,6 +334,11 @@ export default function SerenadeSplash() {
           },
           body: JSON.stringify({
             images: matchImages, // Match photos for song analysis
+            user_profile: {
+              name: userProfile.name,
+              passions: userProfile.passions,
+            },
+            how_flirt: getRatingLabel(ratingLevel),
             generationType: 'song'
           })
         })
