@@ -67,9 +67,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ message: 'Callback received but no taskId' });
     }
 
-    // Only process when generation is complete
-    if (callbackData.data?.callbackType !== 'complete') {
-      console.log(`Suno callback with status '${callbackData.data?.callbackType}' - waiting for completion...`);
+    // Process as soon as we get the first audio track
+    if (callbackData.data?.callbackType !== 'first') {
+      console.log(`Suno callback with status '${callbackData.data?.callbackType}' - waiting for first...`);
       return res.status(200).json({ message: `Callback received - status: ${callbackData.data?.callbackType}` });
     }
 
