@@ -106,7 +106,7 @@ Detect genuine common ground. Pick exactly 2–3 overlaps or closely-related tra
 VERY IMPORTANT to mention the match's name in the first few lyrics so that they its personalised to them
 
 Write a chorus.
-- 6–8 short lines (so it sings naturally for 15–30 s at ≈100 BPM).
+- 10-12 short lines (so it sings naturally for 30-40 s at ≈100 BPM).
 - Keep the music fast paced and upbeat IMPORTANT that it is 100 BPM and above!!!
 - Keep tight rhyme or internal assonance; no verses, no bridge, no emojis.
 - Do not invent facts—reuse phrases from the profiles when helpful.
