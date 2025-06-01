@@ -56,8 +56,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const title = firstLine.length > 80 ? firstLine.substring(0, 77) + '...' : firstLine;
 
     // Construct and log the callback URL for debugging
-    const baseUrl = process.env.YOUR_SITE_URL || 
-                   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://serenade-app.vercel.app');
+    const baseUrl = process.env.YOUR_SITE_URL || 'https://serenade-app.vercel.app';
     const callbackUrl = `${baseUrl}/api/suno-callback`;
     console.log('🔗 Suno callback URL being sent:', callbackUrl);
     console.log('🌍 Environment YOUR_SITE_URL:', process.env.YOUR_SITE_URL || 'NOT SET');

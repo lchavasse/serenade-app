@@ -153,7 +153,7 @@ No emojis, no line numbers, no markdown formatting.`;
           `
         }
       ],
-      max_tokens: 1500,
+      max_tokens: 10000,
       temperature: 0.8, // Higher temperature for more creativity
       response_format: { type: "json_object" }
     });
