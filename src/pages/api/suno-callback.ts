@@ -109,6 +109,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const audioTrack = callbackData.data.data[0];
     console.log(`Processing audio track: ${audioTrack.title} (${audioTrack.duration}s)`);
 
+    console.log('Lyrics:', jobData.lyrics);
+
     // Send audio URL to trimmer server
     console.log('Sending audio to trimmer server...');
     const trimmerResponse = await fetch(`${process.env.AUDIO_TRIMMER_SERVER_URL}/trim`, {

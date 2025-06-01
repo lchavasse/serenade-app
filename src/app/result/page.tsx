@@ -399,13 +399,13 @@ export default function ResultPage() {
             <div className="text-center">
               <h2 className="text-white text-xl font-semibold mb-2">
                 {lipsyncStatus === 'pending' || lipsyncStatus === 'processing' 
-                  ? 'Creating Final Video'
-                  : 'Creating Your Perfect Match'
+                  ? 'Finalizing Your Game.'
+                  : 'Cooking Up Your Style.'
                 }
               </h2>
               <p className="text-white/80">
                 {lipsyncStatus === 'pending' || lipsyncStatus === 'processing'
-                  ? 'Combining your song and video into the perfect match...'
+                  ? 'Sprinkling on a little stardust...'
                   : 'Our AI is analyzing the profile and generating something special just for you...'
                 }
               </p>
@@ -531,11 +531,8 @@ export default function ResultPage() {
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-white text-xl font-semibold mb-2">
-                Your Perfect Song! 🎵
+                Your Song! 🎵 {/* could add the title here */}
               </h2>
-              <p className="text-white/80 text-sm">
-                Based on AI analysis of their profile
-              </p>
             </div>
 
             {/* Audio Player */}
@@ -574,12 +571,9 @@ export default function ResultPage() {
         {videoStatus === 'completed' && videoResult?.videoUrl && !lipsyncResult?.videoUrl && (
           <div className="space-y-6 mt-6">
             <div className="text-center">
-              <h2 className="text-white text-xl font-semibold mb-2">
-                Your Perfect Video! 🎬
+              <h2 className="text-white text-xl font-semibold mb-2 italic">
+                A little teaser! 🎬
               </h2>
-              <p className="text-white/80 text-sm">
-                AI-generated dancing video
-              </p>
             </div>
 
             {/* Video Player */}
