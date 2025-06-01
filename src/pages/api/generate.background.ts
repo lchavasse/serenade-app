@@ -33,6 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Provide default values if not present (for backward compatibility)
   const flirtLevel = how_flirt || 'Romantic';
+  console.log('user_profile', JSON.stringify(user_profile))
   const profile = user_profile || { name: 'Someone Special', passions: 'life and adventure' };
 
   // Respond immediately to avoid timeout

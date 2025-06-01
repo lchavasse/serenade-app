@@ -428,7 +428,12 @@ export default function SerenadeSplash() {
           },
           body: JSON.stringify({
             matchImages: matchImages, // Match photos for song analysis
-            userImage: userImage,     // User photo for video generation
+            userImage: userImage,     // User photo for video generation,
+            how_flirt: getRatingLabel(ratingLevel), // When doing Video generation, we need to pass the how_flirt and user_profile for the sub-song generation
+            user_profile: {
+              name: userProfile.name,
+              passions: userProfile.passions,
+            },
             generationType: 'video'
           })
         })

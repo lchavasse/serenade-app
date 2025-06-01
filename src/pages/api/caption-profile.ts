@@ -88,7 +88,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         type: "text" as const,
         text: captionPrompt
       },
-      ...images.map((image, index) => ({
+      ...images.map((image) => ({
         type: "image_url" as const,
         image_url: {
           url: `data:${image.mime_type};base64,${image.data}`

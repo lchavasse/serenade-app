@@ -100,8 +100,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const songJobId = uuidv4();
 
       const {how_flirt, user_profile} = req.body;
-
-
       
       const songJobData: JobData = {
         jobId: songJobId,
@@ -133,6 +131,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Create both song and video jobs
       const songJobId = uuidv4();
       const videoJobId = uuidv4();
+
+      const {how_flirt, user_profile} = req.body;
       
       const songJobData: JobData = {
         jobId: songJobId,
@@ -156,7 +156,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       
       // Start both jobs in background
       waitUntil(
-        processSongInBackground(songJobId, songImages).catch((error: Error) => {
+        processSongInBackground(songJobId, songImages, how_flirt, user_profile).catch((error: Error) => {
           console.error('Song processing error:', error);
           updateJobWithError(songJobId, error.message);
         })
