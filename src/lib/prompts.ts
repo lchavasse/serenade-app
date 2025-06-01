@@ -107,6 +107,7 @@ VERY IMPORTANT to mention the match's name in the first few lyrics so that they 
 
 Write a chorus.
 - 6–8 short lines (so it sings naturally for 15–30 s at ≈100 BPM).
+- Keep the music fast paced and upbeat IMPORTANT that it is 100 BPM and above!!!
 - Keep tight rhyme or internal assonance; no verses, no bridge, no emojis.
 - Do not invent facts—reuse phrases from the profiles when helpful.
 - The user wants to flirt with the match in a ${how_flirt} way.
