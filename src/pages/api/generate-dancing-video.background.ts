@@ -129,7 +129,7 @@ Output only the final video prompt (no explanation or extras).
           ]
         }
       ],
-      max_tokens: 200
+      max_tokens: 2000
     });
 
     const enhancedPrompt = promptEnhancementResponse.choices[0].message.content;
@@ -143,9 +143,9 @@ Output only the final video prompt (no explanation or extras).
     let cleanedPrompt = enhancedPrompt.trim();
     
     // Ensure the prompt is not too long (fal.ai might have limits)
-    if (cleanedPrompt.length > 500) {
-      cleanedPrompt = cleanedPrompt.substring(0, 497) + '...';
-      console.log('Truncated long prompt to 500 characters');
+    if (cleanedPrompt.length > 2500) {
+      cleanedPrompt = cleanedPrompt.substring(0, 2497) + '...';
+      console.log('Truncated long prompt to 2500 characters');
     }
     
     // Remove any potentially problematic content patterns

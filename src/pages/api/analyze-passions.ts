@@ -11,7 +11,8 @@ export const config = {
 }
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
 });
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -29,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log('Analyzing user photo for passions...');
     
     const analysisResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "anthropic/claude-3.7-sonnet",
       messages: [
         {
           role: "user",
@@ -47,7 +48,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ]
         }
       ],
-      max_tokens: 100
+      max_tokens: 200
     });
 
     const passions = analysisResponse.choices[0].message.content?.trim() || "";

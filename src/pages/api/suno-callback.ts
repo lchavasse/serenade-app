@@ -27,7 +27,27 @@ interface SunoCallbackData {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // Add detailed logging for debugging production issues
+  console.log('🎵 SUNO CALLBACK RECEIVED - Start of handler');
+  console.log('🌍 Environment:', process.env.NODE_ENV);
+  console.log('📨 Request method:', req.method);
+  console.log('🔗 Request URL:', req.url);
+  console.log('📋 Request headers:', JSON.stringify(req.headers, null, 2));
+  console.log('📦 Request body type:', typeof req.body);
+  console.log('📦 Request body preview:', JSON.stringify(req.body, null, 2).substring(0, 500));
+
+  // Handle GET requests for testing endpoint accessibility
+  if (req.method === 'GET') {
+    console.log('🔍 GET request to callback endpoint - testing accessibility');
+    return res.status(200).json({ 
+      message: 'Suno callback endpoint is accessible',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'unknown'
+    });
+  }
+
   if (req.method !== 'POST') {
+    console.log('❌ Non-POST method received:', req.method);
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
@@ -100,6 +120,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         jobId: jobId,
         audioUrl: audioTrack.audio_url,
         duration: 30,
+        lyrics: jobData.lyrics || '',
       }),
     });
 

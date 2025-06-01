@@ -55,6 +55,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const firstLine = lyrics.split('\n')[0]?.replace(/^\[.*?\]\s*/, '') || 'Generated Song';
     const title = firstLine.length > 80 ? firstLine.substring(0, 77) + '...' : firstLine;
 
+    // Construct and log the callback URL for debugging
+    const baseUrl = process.env.YOUR_SITE_URL || 
+                   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://serenade-app.vercel.app');
+    const callbackUrl = `${baseUrl}/api/suno-callback`;
+    console.log('🔗 Suno callback URL being sent:', callbackUrl);
+    console.log('🌍 Environment YOUR_SITE_URL:', process.env.YOUR_SITE_URL || 'NOT SET');
+    console.log('🌍 Environment VERCEL_URL:', process.env.VERCEL_URL || 'NOT SET');
+    console.log('🌍 Final base URL used:', baseUrl);
+
     // Call Suno API to generate music
     const generateResponse = await fetch(`${BASE_URL}/generate`, {
       method: 'POST',
@@ -69,7 +78,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         style: style,
         title: title,
         model: 'V4_5',
-        callBackUrl: `${process.env.YOUR_SITE_URL || 'https://serenade-app.vercel.app'}/api/suno-callback`
+        callBackUrl: callbackUrl
       }),
     });
 
