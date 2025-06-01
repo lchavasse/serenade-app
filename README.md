@@ -1,28 +1,6 @@
 # Description
 
-Serenade is your secret weapon for sparking instant chemistry. Match with someone on Hinge, Tinder, or any app—snap a screenshot of their profile, drop it into Serenade, and we'll generate an image of your ideal match based on their profile. We deliver a shareable image link you can use—no awkward icebreakers required. Just AI-powered matchmaking magic.
-
-## System Requirements
-
-### FFmpeg Installation
-This application requires FFmpeg to be installed on the system for audio processing (trimming songs to 30 seconds for lip-sync videos).
-
-**macOS:**
-```bash
-brew install ffmpeg
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install ffmpeg
-```
-
-**Windows:**
-Download from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html) or use Chocolatey:
-```bash
-choco install ffmpeg
-```
+Serenade is your secret weapon for sparking instant chemistry. Match with someone on Hinge, Tinder, or any app - snap a screenshot of their profile, drop it into Serenade, and we'll generate an personalised music video for you to serenade them. Goodbye lonelieness, hello Serenade.
 
 # Style Overview
 

@@ -111,6 +111,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     console.log('Lyrics:', jobData.lyrics);
 
+    let trimmerResult;
+
+    if (audioTrack.audio_url) {
     // Send audio URL to trimmer server
     console.log('Sending audio to trimmer server...');
     const trimmerResponse = await fetch(`${process.env.AUDIO_TRIMMER_SERVER_URL}/trim`, {
@@ -125,6 +128,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         lyrics: jobData.lyrics || '',
       }),
     });
+  
 
     if (!trimmerResponse.ok) {
       const errorText = await trimmerResponse.text();
@@ -138,13 +142,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       throw new Error('Trimmer server did not return a valid signed URL');
     }
 
+  } else {
+    console.error('No audio URL in Suno callback');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    trimmerResult = { signedUrl: audioTrack.audio_url };
+  }
+
     // Update job to completed status with audio URL from trimmer server
     console.log('Updating job to completed status...');
     
     const updatedJobData: JobData = {
       ...jobData,
       status: 'completed',
-      audioUrl: trimmerResult.signedUrl,
+      audioUrl: trimmerResult?.signedUrl || audioTrack.audio_url,
       updatedAt: new Date().toISOString(),
     };
     
