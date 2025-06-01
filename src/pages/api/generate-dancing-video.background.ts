@@ -164,12 +164,17 @@ Output only the final video prompt (no explanation or extras).
     // Construct the callback URL
     const callbackUrl = `${process.env.YOUR_SITE_URL}/api/fal-kling-callback`;
     console.log('Using callback URL:', callbackUrl);
+
+    const model = process.env.KLING_MODEL || "pro";
+    if (!['standard', 'pro', 'master'].includes(model)) {
+      throw new Error(`Invalid model: ${model}. Model must be one of 'standard', 'pro', or 'master'.`);
+    }
     
-    const { request_id } = await fal.queue.submit("fal-ai/kling-video/v2.1/standard/image-to-video", {
+    const { request_id } = await fal.queue.submit(`fal-ai/kling-video/v2.1/${model}/image-to-video`, {
       input: {
         prompt: cleanedPrompt,
         image_url: imageUrl,
-        duration: "5", // String format as in docs
+        duration: "10", // String format as in docs
         aspect_ratio: "9:16", // Mobile format
         negative_prompt: "blur, distort, and low quality", // Add default negative prompt
         cfg_scale: 0.5
